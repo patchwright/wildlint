@@ -1,0 +1,27 @@
+name: Release
+
+# Publishes to PyPI via Trusted Publishing (OIDC) — no API token stored.
+# One-time setup on PyPI: add a "pending publisher" for project `wildlint`
+# pointing at owner `patchwright`, repo `wildlint`, workflow `release.yml`.
+# Then push a tag like `v0.1.0` to publish.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # required for trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Build sdist + wheel
+        run: |
+          pip install build
+          python -m build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
