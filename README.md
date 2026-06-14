@@ -52,8 +52,12 @@ repos:
 | Code  | Tier     | Catches | Distilled from |
 |-------|----------|---------|----------------|
 | WL001 | default  | `x.replace(P, "")` guarded by `x.startswith(P)`/`endswith(P)` — removes *every* occurrence, silently corrupting values that contain the marker twice. Meant `str.removeprefix`/`removesuffix`. | [nephila/giturlparse#149](https://github.com/nephila/giturlparse/pull/149) |
-| WL002 | default  | `s.split(' ')` where `s.split()` was meant — keeps empty tokens and skips whitespace collapsing/trimming, leaking blanks downstream. Advisory: only an exact single-space literal fires. | [derek73/python-nameparser#164](https://github.com/derek73/python-nameparser/pull/164) |
+| WL002 | pedantic | `s.split(' ')` where `s.split()` was meant — keeps empty tokens and skips whitespace collapsing/trimming, leaking blanks downstream. Advisory and opt-in: only an exact single-space literal fires, and it's frequently intentional. | [derek73/python-nameparser#164](https://github.com/derek73/python-nameparser/pull/164) |
 | WL003 | pedantic | `x[-k]` with `k >= 2` — `IndexError` when the sequence is shorter than `k`. Opt-in because deep negative indexing is often provably safe from context the checker can't see. | [savoirfairelinux/num2words#661](https://github.com/savoirfairelinux/num2words/pull/661) |
+
+The **default** tier is WL001 only — it has effectively zero false positives. WL002
+and WL003 are opt-in via `--pedantic`: real bug classes, but they also fire on
+legitimate code, so the default stays strictly precision.
 
 Each rule is verified against the *actual pre-fix source* of the project it came
 from — see the tests, and the rule docstrings in `src/wildlint/checkers.py`.

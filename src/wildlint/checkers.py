@@ -124,7 +124,7 @@ class SplitSingleSpace:
 
     code = "WL002"
     name = "split-single-space"
-    tier = DEFAULT
+    tier = PEDANTIC
 
     def check(self, tree: ast.AST, path: str) -> list[Finding]:
         out: list[Finding] = []

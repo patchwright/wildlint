@@ -63,25 +63,30 @@ def test_wl001_silent_without_guard():
 # --------------------------------------------------------------------------- #
 
 
-def test_wl002_fires_on_split_single_space():
-    assert _codes("x = name.split(' ')\n") == ["WL002"]
+def test_wl002_off_by_default():
+    # Demoted to pedantic in 0.1.1 — its FP rate on clean code is real.
+    assert _codes("x = name.split(' ')\n") == []
 
 
-def test_wl002_fires_on_rsplit_single_space():
-    assert _codes("x = name.rsplit(' ')\n") == ["WL002"]
+def test_wl002_fires_on_split_single_space_when_pedantic():
+    assert _codes("x = name.split(' ')\n", pedantic=True) == ["WL002"]
+
+
+def test_wl002_fires_on_rsplit_single_space_when_pedantic():
+    assert _codes("x = name.rsplit(' ')\n", pedantic=True) == ["WL002"]
 
 
 def test_wl002_silent_on_bare_split():
-    assert "WL002" not in _codes("x = name.split()\n")
+    assert "WL002" not in _codes("x = name.split()\n", pedantic=True)
 
 
 def test_wl002_silent_on_double_space():
     # Two spaces is a deliberate delimiter, not the bug.
-    assert "WL002" not in _codes("x = name.split('  ')\n")
+    assert "WL002" not in _codes("x = name.split('  ')\n", pedantic=True)
 
 
 def test_wl002_silent_on_comma():
-    assert "WL002" not in _codes("x = name.split(',')\n")
+    assert "WL002" not in _codes("x = name.split(',')\n", pedantic=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -111,9 +116,15 @@ def test_wl003_fires_on_deeper_index_when_pedantic():
 # --------------------------------------------------------------------------- #
 
 
+def test_default_tier_is_wl001_only():
+    # After the 0.1.1 demotion, only WL001 runs by default.
+    src = "a = name.split(' ')\nif p.startswith('/x/'):\n    p = p.replace('/x/', '')\n"
+    assert _codes(src) == ["WL001"]
+    assert sorted(_codes(src, pedantic=True)) == ["WL001", "WL002"]
+
+
 def test_select_restricts_to_codes():
     src = "a = name.split(' ')\nif p.startswith('/x/'):\n    p = p.replace('/x/', '')\n"
-    assert _codes(src) == ["WL001", "WL002"] or _codes(src) == ["WL002", "WL001"]
     assert _codes(src, codes={"WL002"}) == ["WL002"]
 
 

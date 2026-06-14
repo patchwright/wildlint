@@ -10,6 +10,6 @@ from __future__ import annotations
 from .checkers import CHECKERS, Finding, check_source
 from .cli import main
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = ["CHECKERS", "Finding", "check_source", "main", "__version__"]
