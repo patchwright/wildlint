@@ -1,0 +1,6 @@
+- id: wildlint
+  name: wildlint
+  description: Static checks distilled from real upstream bugs.
+  entry: wildlint
+  language: python
+  types: [python]

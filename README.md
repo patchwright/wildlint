@@ -1,5 +1,8 @@
 # wildlint
 
+[![CI](https://github.com/patchwright/wildlint/actions/workflows/ci.yml/badge.svg)](https://github.com/patchwright/wildlint/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/wildlint.svg)](https://pypi.org/project/wildlint/)
+
 Static checks distilled from **real upstream bugs** — the kind off-the-shelf
 linters miss because they look like ordinary, working code.
 
@@ -12,7 +15,7 @@ as noise (see [Not shipped](#bugs-considered-but-not-shipped)).
 ## Install
 
 ```bash
-pip install git+https://github.com/patchwright/wildlint
+pip install wildlint
 ```
 
 ## Use
@@ -25,6 +28,24 @@ wildlint --pedantic src/     # also run opt-in, higher-false-positive rules
 
 Exits non-zero when anything is found, so it drops straight into CI or a
 pre-commit hook.
+
+### pre-commit
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/patchwright/wildlint
+    rev: v0.1.0
+    hooks:
+      - id: wildlint
+```
+
+### CI (GitHub Actions)
+
+```yaml
+- run: pip install wildlint
+- run: wildlint src/
+```
 
 ## Rules
 
