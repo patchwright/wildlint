@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wildlint"
+version = "0.1.0"
+description = "Static checks distilled from real upstream bugs that off-the-shelf linters miss."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["lint", "linter", "ast", "static-analysis", "bugs", "removeprefix"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Quality Assurance",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.urls]
+Homepage = "https://github.com/patchwright/wildlint"
+Issues = "https://github.com/patchwright/wildlint/issues"
+
+[project.scripts]
+wildlint = "wildlint:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
