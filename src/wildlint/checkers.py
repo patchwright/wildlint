@@ -242,4 +242,14 @@ NON_GENERALIZED = {
     "ordering of `,` vs `-`/`/` handling is specific to that parser's structure.",
     "radix-from-ignored-param": "skorokithakis/shortuuid #115 — requires reading "
     "the docstring contract ('alphabet is ignored') and matching it to impl.",
+    "rng-from-unordered-set": "Iterating a set into a population for random "
+    "selection — random.choice/sample/choices over set-ordered data, or "
+    "list(some_set) feeding random.choices weights — is non-deterministic across "
+    "processes: PYTHONHASHSEED varies per worker, so set iteration order (and "
+    "thus item<->weight alignment) changes run to run. The bare surface form "
+    "(random.choice({1,2,3})) is rare and a narrow rule could catch it, but the "
+    "real class (set->list->positional use, e.g. the EvoEcos f982904 fix) is only "
+    "visible cross-process and is best caught by a reproducibility property test "
+    "(run twice under differing PYTHONHASHSEED, assert identical output), not a "
+    "static rule. No public gift-PR origin to verify against, so not shipped.",
 }

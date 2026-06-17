@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .checkers import CHECKERS, Finding, check_source
+from .property_templates import TEMPLATES, get_template
 
 
 def _iter_python_files(paths: list[str]):
@@ -35,13 +36,38 @@ def _build_parser() -> argparse.ArgumentParser:
     from . import __version__
 
     rules = ", ".join(f"{c.code} ({c.name}, {c.tier})" for c in CHECKERS)
+    templates = ", ".join(f"{t.code} ({t.name})" for t in TEMPLATES)
     parser = argparse.ArgumentParser(
         prog="wildlint",
         description="Static checks distilled from real upstream bugs. "
-        f"Rules: {rules}.",
+        f"Rules: {rules}. Property-test templates: {templates}.",
     )
     parser.add_argument(
         "paths", nargs="*", default=["."], help="files or dirs (default: .)"
+    )
+    parser.add_argument(
+        "--template",
+        metavar="NAME",
+        help="print a ready-to-paste property-test for a class that resists a "
+        f"static rule ({templates}), then exit. Customize with "
+        "--func/--import-from/--base.",
+    )
+    parser.add_argument(
+        "--func",
+        default="humanize",
+        help="function name to test in the rendered --template (default: humanize)",
+    )
+    parser.add_argument(
+        "--import-from",
+        dest="import_from",
+        default="yourmodule",
+        help="module to import --func from in the rendered --template",
+    )
+    parser.add_argument(
+        "--base",
+        type=int,
+        default=1000,
+        help="unit radix for the rendered --template: 1000 (SI) or 1024 (bytes)",
     )
     parser.add_argument(
         "--pedantic",
@@ -61,6 +87,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    if args.template:
+        tmpl = get_template(args.template)
+        if tmpl is None:
+            known = ", ".join(f"{t.code}/{t.name}" for t in TEMPLATES)
+            print(
+                f"unknown template {args.template!r}; known: {known}", file=sys.stderr
+            )
+            return 2
+        print(
+            tmpl.render(func=args.func, import_from=args.import_from, base=args.base),
+            end="",
+        )
+        return 0
+
     codes = (
         {c.strip().upper() for c in args.select.split(",") if c.strip()}
         if args.select

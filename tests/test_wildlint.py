@@ -46,9 +46,7 @@ def test_wl001_silent_when_replacement_not_empty():
 
 def test_wl001_silent_when_literals_differ():
     src = (
-        "def f(p):\n"
-        "    if p.startswith('/a/'):\n"
-        "        return p.replace('/b/', '')\n"
+        "def f(p):\n    if p.startswith('/a/'):\n        return p.replace('/b/', '')\n"
     )
     assert "WL001" not in _codes(src)
 

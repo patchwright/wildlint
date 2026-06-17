@@ -9,7 +9,18 @@ from __future__ import annotations
 
 from .checkers import CHECKERS, Finding, check_source
 from .cli import main
+from .property_templates import TEMPLATES, Violation, find_rollover, get_template
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
-__all__ = ["CHECKERS", "Finding", "check_source", "main", "__version__"]
+__all__ = [
+    "CHECKERS",
+    "Finding",
+    "check_source",
+    "main",
+    "TEMPLATES",
+    "Violation",
+    "find_rollover",
+    "get_template",
+    "__version__",
+]
