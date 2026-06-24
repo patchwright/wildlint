@@ -8,11 +8,14 @@ value, then round the mantissa — so a value just under a boundary rounds up to
 
 from __future__ import annotations
 
+import datetime
 import math
 
 from wildlint.property_templates import (
+    DATE_KWARGS,
     ROLLOVER,
     TEMPLATES,
+    find_date_kwargs,
     find_rollover,
     get_template,
 )
@@ -175,3 +178,92 @@ def test_templates_registry_nonempty_and_well_formed():
         assert t.code.startswith("WP")
         assert t.provenance
         assert callable(t.check)
+
+
+# --------------------------------------------------------------------------- #
+# find_date_kwargs — date/datetime-subclass confusion (WP002, deepdiff#602)
+# --------------------------------------------------------------------------- #
+
+
+def buggy_truncate(value: object) -> object:
+    """Reproduces deepdiff#602: assumes a datetime, calls
+    ``.replace(second=0, microsecond=0)`` unconditionally. Crashes on a bare
+    ``date`` because ``date.replace`` accepts only year/month/day."""
+    return value.replace(second=0, microsecond=0)  # type: ignore[union-attr]
+
+
+def safe_truncate(value: object) -> object:
+    """The fix: only apply datetime-only ``.replace`` when the value actually
+    carries time fields (``date`` has no ``hour``)."""
+    if hasattr(value, "hour"):
+        return value.replace(second=0, microsecond=0)  # type: ignore[union-attr]
+    return value
+
+
+def test_find_date_kwargs_catches_the_real_bug():
+    violations = find_date_kwargs(buggy_truncate)
+    assert violations, "should catch the date/datetime-subclass bug"
+    # the bare-date probe (not a datetime) must be among the violations
+    assert any(
+        isinstance(v.value, datetime.date)
+        and not isinstance(v.value, datetime.datetime)
+        for v in violations
+    )
+
+
+def test_find_date_kwargs_silent_on_safe():
+    assert find_date_kwargs(safe_truncate) == []
+
+
+def test_find_date_kwargs_catches_attribute_error_path():
+    # Reading .hour on a date (which has none) bites via AttributeError, and the
+    # message cites the time-only field "hour" — a different exception type but
+    # the same bug class.
+    def reads_hour(value: object) -> object:
+        return value.hour  # type: ignore[union-attr]
+
+    violations = find_date_kwargs(reads_hour)
+    assert violations
+    assert any("hour" in v.output for v in violations)
+
+
+def test_find_date_kwargs_skips_unrelated_crash():
+    # A TypeError that does NOT cite a time-only field is a different bug class
+    # and must not be recorded as a date-kwargs violation.
+    def unrelated(value: object) -> object:
+        if not isinstance(value, int):
+            raise TypeError("argument must be int, not " + type(value).__name__)
+        return value
+
+    assert find_date_kwargs(unrelated) == []
+
+
+def test_date_kwargs_violation_str_is_actionable():
+    v = find_date_kwargs(buggy_truncate)[0]
+    s = str(v)
+    assert "date-kwargs" in s
+    assert "TypeError" in s
+    assert "second" in s  # the offending time-only field
+
+
+def test_get_template_wp002():
+    assert get_template("WP002") is DATE_KWARGS
+    assert get_template("date-time-kwargs") is DATE_KWARGS
+    assert get_template("nope") is None
+
+
+def test_render_date_kwargs_module():
+    rendered = DATE_KWARGS.render(func="truncate", import_from="deepdiff", base=1000)
+    assert "from deepdiff import truncate" in rendered
+    assert "find_date_kwargs(truncate)" in rendered
+    assert "def test_does_not_crash_on_date():" in rendered
+    assert "deepdiff#602" in rendered
+    # base is accepted for CLI uniformity but the date-kwargs check has no base
+    assert "base=" not in rendered.split("def test_does_not_crash_on_date")[1]
+
+
+def test_rendered_date_kwargs_is_valid_python():
+    import ast
+
+    rendered = DATE_KWARGS.render(func="truncate", import_from="deepdiff")
+    ast.parse(rendered)  # must not raise

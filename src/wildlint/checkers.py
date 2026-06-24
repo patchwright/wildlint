@@ -242,6 +242,15 @@ NON_GENERALIZED = {
     "ordering of `,` vs `-`/`/` handling is specific to that parser's structure.",
     "radix-from-ignored-param": "skorokithakis/shortuuid #115 — requires reading "
     "the docstring contract ('alphabet is ignored') and matching it to impl.",
+    "uri-fragment-as-userinfo": "go-openapi/strfmt #269 (merged) — a URI "
+    "validator rejected absolute URIs with a fragment ('https://host#@frag') "
+    "because Go's url.ParseRequestURI assumes a request-line with no fragment, "
+    "so it misread '#@frag' as invalid userinfo. This is a real bug but it is "
+    "Go-specific: every Python URI parser (urllib.parse, rfc3986, yarl, furl, "
+    "hyperlink — probed 2026-06-24) is RFC-3986-compliant and correctly treats "
+    "'#' as the fragment delimiter. No Python surface bites, so there is no "
+    "property template to ship — the class does not exist outside Go's "
+    "request-URI contract. A static AST rule is similarly impossible.",
     "rng-from-unordered-set": "Iterating a set into a population for random "
     "selection — random.choice/sample/choices over set-ordered data, or "
     "list(some_set) feeding random.choices weights — is non-deterministic across "

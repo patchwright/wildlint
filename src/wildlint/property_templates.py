@@ -29,6 +29,7 @@ The design mirrors ``checkers.py``: a small registry of objects with ``code`` /
 
 from __future__ import annotations
 
+import datetime
 import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
@@ -41,15 +42,22 @@ _MANTISSA_RE = re.compile(r"\s*([+-]?\d+(?:\.\d+)?)\s*(.*?)\s*$")
 
 @dataclass(frozen=True)
 class Violation:
-    """One input whose humanized output broke the rollover invariant."""
+    """One input where a property under test was violated.
 
-    value: float
+    For the rounding-rollover property ``mantissa``/``unit`` carry the parsed
+    output. For other properties they are ``None`` and the break is described by
+    ``output`` (what happened) + ``reason`` (why it violates the property).
+    """
+
+    value: object
     output: str
-    mantissa: float
-    unit: str
-    reason: str
+    mantissa: float | None = None
+    unit: str | None = None
+    reason: str = ""
 
     def __str__(self) -> str:
+        if self.mantissa is None:
+            return f"date-kwargs: f({self.value!r}) -> {self.output}; {self.reason}"
         return (
             f"rollover: f({self.value!r}) -> {self.output!r} "
             f"(mantissa {self.mantissa:g} >= base with unit {self.unit!r}); "
@@ -161,6 +169,80 @@ def find_rollover(
     return violations
 
 
+# Time-only fields that datetime.date does NOT accept: date.replace() takes only
+# year/month/day, and date has no .hour/.minute/.second/... attribute. A function
+# written assuming datetime.datetime that calls these on a date raises.
+_TIME_KWARGS: tuple[str, ...] = (
+    "hour",
+    "minute",
+    "second",
+    "microsecond",
+    "nanosecond",
+    "tzinfo",
+    "fold",
+)
+
+
+def find_date_kwargs(
+    fn: Callable[..., object],
+    *,
+    values: Iterable[object] | None = None,
+) -> list[Violation]:
+    """Probe ``fn`` with date/time objects and flag datetime-assuming calls.
+
+    The recurring **date/datetime-subclass confusion** bug: a function written
+    assuming :class:`datetime.datetime` unconditionally calls
+    ``obj.replace(second=0, microsecond=0, ...)`` (or reads ``obj.hour``). Fed a
+    bare :class:`datetime.date` it raises
+    ``TypeError: 'second' is an invalid keyword argument for 'replace()'`` — and
+    ``date`` instances reach that path precisely because
+    :class:`datetime.datetime` is a *subclass* of :class:`datetime.date`, so any
+    ``isinstance(x, date)`` dispatch admits datetimes but fails to keep bare
+    dates out. Provenance: ``deepdiff#602`` (``truncate_datetime`` crashed on a
+    ``date`` dispatched via ``_diff_time`` -> ``datetime_normalize``).
+
+    ``fn`` is the callable under test. By default it is probed with a bare
+    ``date`` and a bare ``time`` (override with ``values``). A violation is
+    recorded only when ``fn`` raises ``TypeError``/``AttributeError`` whose
+    message cites a time-only field — the signature of *this* class, not an
+    unrelated crash (which is a different bug and is skipped).
+    """
+    probes = (
+        list(values)
+        if values is not None
+        else [
+            datetime.date(2020, 1, 1),
+            datetime.time(12, 30, 45),
+        ]
+    )
+    violations: list[Violation] = []
+    for probe in probes:
+        try:
+            fn(probe)
+        except (TypeError, AttributeError) as exc:
+            msg = str(exc)
+            cited = [kw for kw in _TIME_KWARGS if kw in msg]
+            if not cited:
+                continue
+            violations.append(
+                Violation(
+                    value=probe,
+                    output=f"{type(exc).__name__}: {msg}",
+                    reason=(
+                        f"fn assumed datetime.datetime and used time-only "
+                        f"field(s) {', '.join(cited)} on a "
+                        f"{type(probe).__name__}; datetime is a subclass of "
+                        f"date so {type(probe).__name__} instances reach this "
+                        f"path"
+                    ),
+                )
+            )
+        except Exception:
+            # A different failure is a different bug class; not our signal.
+            continue
+    return violations
+
+
 _RENDERED = """\
 # Rounding-rollover property test  (wildlint {code} — {name})
 #
@@ -201,6 +283,47 @@ def test_no_rounding_rollover():
 """
 
 
+_DATE_KWARGS_RENDERED = """\
+# Date/datetime-subclass confusion property test  (wildlint {code} — {name})
+#
+# Provenance: {provenance}
+#
+# Invariant: a function that accepts a temporal value must not crash when handed
+# a bare datetime.date (or datetime.time) instead of a datetime.datetime.
+# {func}(date(2020, 1, 1)) must not raise. datetime is a SUBCLASS of date, so any
+# isinstance(x, date) dispatch admits datetimes but fails to keep bare dates out,
+# and a .replace(second=0, microsecond=0) written for datetime then raises
+# TypeError on a date. This has no stable AST signature, so it is checked as a
+# property, not a lint.
+
+from wildlint.property_templates import find_date_kwargs
+from {import_from} import {func}
+
+
+def test_does_not_crash_on_date():
+    violations = find_date_kwargs({func})
+    assert not violations, "\\n".join(str(v) for v in violations)
+
+
+# --- Self-contained variant (no wildlint dependency) ------------------------
+# Uncomment if you prefer zero deps. This is the exact check, inlined.
+#
+# from datetime import date, time
+#
+# def test_does_not_crash_on_date():
+#     bad = []
+#     for probe in (date(2020, 1, 1), time(12, 30, 45)):
+#         try:
+#             {func}(probe)
+#         except (TypeError, AttributeError) as exc:
+#             if any(k in str(exc) for k in
+#                    ("hour", "minute", "second", "microsecond",
+#                     "nanosecond", "tzinfo", "fold")):
+#                 bad.append(f"{{probe!r}} -> {{exc}}")
+#     assert not bad, "\\n".join(bad)
+"""
+
+
 @dataclass(frozen=True)
 class PropertyTemplate:
     """A property-test recipe for a class that resists a static rule."""
@@ -235,6 +358,24 @@ def _render_rollover(
     )
 
 
+def _render_date_kwargs(
+    tmpl: PropertyTemplate,
+    *,
+    func: str = "humanize",
+    import_from: str = "yourmodule",
+    base: int = 1000,
+) -> str:
+    # ``base`` is accepted solely so the CLI can call every template's render
+    # uniformly (func/import_from/base); the date-kwargs property has no base.
+    return _DATE_KWARGS_RENDERED.format(
+        code=tmpl.code,
+        name=tmpl.name,
+        provenance=", ".join(tmpl.provenance),
+        func=func,
+        import_from=import_from,
+    )
+
+
 ROLLOVER = PropertyTemplate(
     code="WP001",
     name="rounding-rollover",
@@ -254,7 +395,23 @@ ROLLOVER = PropertyTemplate(
     _render=_render_rollover,
 )
 
-TEMPLATES = [ROLLOVER]
+
+DATE_KWARGS = PropertyTemplate(
+    code="WP002",
+    name="date-time-kwargs",
+    tier=DEFAULT,
+    description=(
+        "A function that accepts a temporal value unconditionally reads a "
+        "datetime-only field (.replace(second=0, microsecond=0) or .hour) and "
+        "crashes on a bare datetime.date, because datetime is a subclass of date "
+        "so isinstance(x, date) dispatch admits dates the code cannot handle."
+    ),
+    provenance=("deepdiff#602",),
+    check=find_date_kwargs,
+    _render=_render_date_kwargs,
+)
+
+TEMPLATES = [ROLLOVER, DATE_KWARGS]
 
 
 def get_template(code_or_name: str) -> PropertyTemplate | None:
