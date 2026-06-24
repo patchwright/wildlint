@@ -35,7 +35,7 @@ pre-commit hook.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/patchwright/wildlint
-    rev: v0.2.0
+    rev: v0.3.0
     hooks:
       - id: wildlint
 ```
@@ -96,15 +96,36 @@ across a unit boundary) and returns the concrete violations. Pass `units=[...]`
 (small→large) for an exact check that won't flag legitimate overflow at the
 largest unit.
 
+The same two-way model covers the **date/datetime-subclass confusion** bug
+([deepdiff#602](https://github.com/qlustered/deepdiff/pull/602)): a function
+written assuming `datetime.datetime` that calls `.replace(second=0,
+microsecond=0)` (or reads `.hour`) crashes on a bare `datetime.date`, because
+`datetime` is a *subclass* of `date` — so any `isinstance(x, date)` dispatch
+admits dates the code cannot handle.
+
+```python
+from wildlint.property_templates import find_date_kwargs
+
+def test_does_not_crash_on_date():
+    violations = find_date_kwargs(truncate)  # probes with a bare date and time
+    assert not violations, "\n".join(str(v) for v in violations)
+```
+
+`find_date_kwargs` records only `TypeError`/`AttributeError` whose message cites
+a time-only field (`hour`, `minute`, `second`, …); an unrelated crash is a
+different class and is skipped.
+
 **Or render a paste-ready template:**
 
 ```bash
 wildlint --template rollover --func millify --import-from millify --base 1000
+wildlint --template date-time-kwargs --func truncate --import-from deepdiff
 ```
 
 | Code  | Catches | Distilled from |
 |-------|---------|----------------|
 | WP001 | A humanizer emits a mantissa `>= base` while a larger unit is available (`'1000k'` instead of `'1M'`) because the unit is chosen before the mantissa is rounded. | boltons#403, millify#13, numerize#17, si-prefix#17 |
+| WP002 | A function accepting a temporal value unconditionally reads a datetime-only field (`.replace(second=0, microsecond=0)` or `.hour`) and crashes on a bare `datetime.date` — `datetime` is a subclass of `date`, so `isinstance(x, date)` admits dates the code can't handle. | deepdiff#602 |
 
 ## Bugs considered but not shipped
 
