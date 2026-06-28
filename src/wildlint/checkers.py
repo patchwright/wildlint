@@ -38,6 +38,62 @@ def _str_const(node: ast.expr) -> str | None:
     return None
 
 
+# Actions that store no useful attribute on the namespace.
+_NO_DEST_ACTIONS = {"help", "version"}
+
+
+def _argparse_dest(call: ast.Call) -> tuple[str, str] | None:
+    """Compute ``(dest, label)`` for an ``add_argument`` call, or ``None``.
+
+    Mirrors argparse's own dest derivation: an explicit ``dest=`` wins; else the
+    first long option (``--foo-bar`` -> ``foo_bar``), else the first short option
+    (``-f`` -> ``f``), else the positional name. Returns ``None`` when the dest
+    cannot be determined statically (dynamic ``dest=``/``argparse.SUPPRESS``, a
+    ``help``/``version`` action that stores nothing, or no string option given).
+    """
+    dest: str | None = None
+    dest_kw_seen = False
+    action: str | None = None
+    for kw in call.keywords:
+        if kw.arg == "dest":
+            dest_kw_seen = True
+            dest = _str_const(kw.value)
+        elif kw.arg == "action":
+            action = _str_const(kw.value)
+    if action in _NO_DEST_ACTIONS:
+        return None
+    if dest_kw_seen and dest is None:
+        return None  # dest is dynamic or argparse.SUPPRESS — cannot reason
+
+    long_opt = short_opt = positional = None
+    for arg in call.args:
+        s = _str_const(arg)
+        if s is None:
+            continue
+        if s.startswith("--"):
+            long_opt = long_opt or s
+        elif s.startswith("-") and len(s) > 1:
+            short_opt = short_opt or s
+        else:
+            positional = positional or s
+
+    if dest is None:
+        if long_opt is not None:
+            dest, label = long_opt[2:].replace("-", "_"), long_opt
+        elif short_opt is not None:
+            dest, label = short_opt[1:].replace("-", "_"), short_opt
+        elif positional is not None:
+            dest, label = positional.replace("-", "_"), positional
+        else:
+            return None
+    else:
+        label = long_opt or short_opt or positional or dest
+
+    if not dest.isidentifier():
+        return None
+    return dest, label
+
+
 # --------------------------------------------------------------------------- #
 # WL001 — replace-to-empty used as a prefix/suffix strip
 # Origin: nephila/giturlparse PR #149
@@ -196,10 +252,133 @@ class NegativeIndexNoGuard:
         return out
 
 
+# --------------------------------------------------------------------------- #
+# WL004 — argparse option defined but never wired (its dest is never read)
+# Origin: un33k/python-slugify PR #180
+# --------------------------------------------------------------------------- #
+class ArgparseDeadDest:
+    """An ``add_argument`` whose ``dest`` is never read — the flag is dropped.
+
+    The slugify CLI defined ``--regex-pattern`` but ``slugify_params`` forwarded
+    every namespace field *except* ``args.regex_pattern``, so the flag parsed and
+    then silently vanished. Distilled to: a dest that no attribute access in the
+    file ever reads, while *sibling* dests on the same parser are read — which is
+    what proves the consumption site is this file and the gap is an oversight,
+    not consumption happening elsewhere.
+
+    Conservative by construction (favours false negatives):
+
+    * Requires at least one collected dest to be read here; otherwise the whole
+      file is treated as a parse-only site (consumption is elsewhere) and stays
+      silent.
+    * Bails entirely on any by-string / dynamic namespace access — ``vars()``,
+      ``getattr``/``setattr``/``hasattr``, ``.__dict__`` or ``parse_known_args``
+      — since a dest could be consumed without a literal ``.dest`` attribute.
+    * A dest whose token coincides with any attribute read anywhere (even on an
+      unrelated object) is assumed wired and left alone.
+    """
+
+    code = "WL004"
+    name = "argparse-dead-dest"
+    tier = DEFAULT
+
+    @staticmethod
+    def _anno_is_namespace(anno: ast.expr) -> bool:
+        return ast.unparse(anno) in ("argparse.Namespace", "Namespace")
+
+    @staticmethod
+    def _dynamic_namespace_access(node: ast.AST, ns_names: set[str]) -> bool:
+        """A by-string read of a namespace, hiding which dests are consumed."""
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == "__dict__"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in ns_names
+        ):
+            return True
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in ("vars", "getattr", "setattr", "hasattr")
+        ):
+            return any(isinstance(a, ast.Name) and a.id in ns_names for a in node.args)
+        return False
+
+    def check(self, tree: ast.AST, path: str) -> list[Finding]:
+        add_calls: list[tuple[str, str, int, int]] = []
+        ns_names: set[str] = set()  # variables holding an argparse Namespace
+        for node in ast.walk(tree):
+            # A namespace flows in from `x = ....parse_args(...)` ...
+            if (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr == "parse_args"
+            ):
+                ns_names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            # ... or from a parameter annotated `argparse.Namespace`.
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                a = node.args
+                for arg in (*a.posonlyargs, *a.args, *a.kwonlyargs):
+                    if arg.annotation is not None and self._anno_is_namespace(
+                        arg.annotation
+                    ):
+                        ns_names.add(arg.arg)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                attr = node.func.attr
+                if attr == "parse_known_args":
+                    return []  # tuple result — can't track which name is the namespace
+                if attr == "add_argument" and node.args:
+                    dest = _argparse_dest(node)
+                    if dest is not None:
+                        add_calls.append(
+                            (dest[0], dest[1], node.lineno, node.col_offset)
+                        )
+
+        # No locally-bound namespace -> this is a parse-only / definitions file;
+        # the dests are consumed elsewhere and cannot be judged here.
+        if not add_calls or not ns_names:
+            return []
+
+        ns_attrs: set[str] = set()  # attributes read on a namespace variable
+        for node in ast.walk(tree):
+            if self._dynamic_namespace_access(node, ns_names):
+                return []
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id in ns_names
+            ):
+                ns_attrs.add(node.attr)
+
+        collected = {d for d, _, _, _ in add_calls}
+        if not (collected & ns_attrs):
+            return []  # no dest wired here -> consumption is in another file
+
+        out: list[Finding] = []
+        seen: set[str] = set()
+        for dest, label, line, col in add_calls:
+            if dest in ns_attrs or dest in seen:
+                continue
+            seen.add(dest)
+            out.append(
+                Finding(
+                    path,
+                    line,
+                    col,
+                    self.code,
+                    f"argparse option {label!r} (dest {dest!r}) is parsed but its "
+                    "value is never read; the flag is silently ignored",
+                )
+            )
+        return out
+
+
 CHECKERS = [
     ReplaceToEmptyPrefix(),
     SplitSingleSpace(),
     NegativeIndexNoGuard(),
+    ArgparseDeadDest(),
 ]
 
 

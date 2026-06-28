@@ -110,6 +110,122 @@ def test_wl003_fires_on_deeper_index_when_pedantic():
 
 
 # --------------------------------------------------------------------------- #
+# WL004 — argparse option defined but never wired (slugify #180)
+# --------------------------------------------------------------------------- #
+
+# Mirrors the slugify CLI shape: many flags wired, one (--regex-pattern) dropped.
+_SLUGIFY_LIKE = (
+    "import argparse\n"
+    "def parse(argv):\n"
+    "    p = argparse.ArgumentParser()\n"
+    "    p.add_argument('text')\n"
+    "    p.add_argument('--max-length', type=int)\n"
+    "    p.add_argument('--no-entities', dest='entities', action='store_false')\n"
+    "    p.add_argument('--regex-pattern')\n"
+    "    args = p.parse_args(argv)\n"
+    "    return dict(text=args.text, max_length=args.max_length, "
+    "entities=args.entities)\n"
+)
+
+
+def test_wl004_fires_on_unwired_option():
+    out = check_source(_SLUGIFY_LIKE, "cli.py")
+    assert [f.code for f in out] == ["WL004"]
+    assert "regex_pattern" in out[0].message
+
+
+def test_wl004_default_tier():
+    # WL004 is low-FP and runs without --pedantic.
+    assert "WL004" in _codes(_SLUGIFY_LIKE)
+
+
+def test_wl004_silent_when_flag_is_read():
+    src = _SLUGIFY_LIKE.replace(
+        "entities=args.entities)", "entities=args.entities, rp=args.regex_pattern)"
+    )
+    assert "WL004" not in _codes(src)
+
+
+def test_wl004_silent_when_no_dest_read_in_file():
+    # Parse-only site: consumption happens in another module -> stay silent.
+    src = (
+        "import argparse\n"
+        "def build():\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    p.add_argument('--max-length')\n"
+        "    return p.parse_args()\n"
+    )
+    assert "WL004" not in _codes(src)
+
+
+def test_wl004_silent_with_vars_namespace():
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    args = p.parse_args(argv)\n"
+        "    return go(text=args.text, **{k: v for k, v in vars(args).items()})\n"
+    )
+    assert "WL004" not in _codes(src)
+
+
+def test_wl004_silent_with_getattr_namespace():
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    args = p.parse_args(argv)\n"
+        "    return (args.text, getattr(args, 'regex_pattern'))\n"
+    )
+    assert "WL004" not in _codes(src)
+
+
+def test_wl004_silent_with_parse_known_args():
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    args, rest = p.parse_known_args(argv)\n"
+        "    return args.text\n"
+    )
+    assert "WL004" not in _codes(src)
+
+
+def test_wl004_skips_version_and_help_actions():
+    # action='version'/'help' store no dest -> never reported as dead.
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--version', action='version', version='1')\n"
+        "    args = p.parse_args(argv)\n"
+        "    return args.text\n"
+    )
+    assert "WL004" not in _codes(src)
+
+
+def test_wl004_silent_when_all_wired():
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--count', type=int)\n"
+        "    args = p.parse_args(argv)\n"
+        "    return (args.text, args.count)\n"
+    )
+    assert "WL004" not in _codes(src)
+
+
+# --------------------------------------------------------------------------- #
 # selection / tier behavior
 # --------------------------------------------------------------------------- #
 
