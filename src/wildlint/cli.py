@@ -64,6 +64,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="module to import --func from in the rendered --template",
     )
     parser.add_argument(
+        "--inverse",
+        default="decode",
+        help="inverse function name for round-trip templates, e.g. --inverse "
+        "decodebytes (default: decode; ignored by unary templates)",
+    )
+    parser.add_argument(
         "--base",
         type=int,
         default=1000,
@@ -97,7 +103,12 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         print(
-            tmpl.render(func=args.func, import_from=args.import_from, base=args.base),
+            tmpl.render(
+                func=args.func,
+                import_from=args.import_from,
+                base=args.base,
+                inverse=args.inverse,
+            ),
             end="",
         )
         return 0

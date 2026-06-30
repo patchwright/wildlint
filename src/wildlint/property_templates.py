@@ -54,8 +54,14 @@ class Violation:
     mantissa: float | None = None
     unit: str | None = None
     reason: str = ""
+    kind: str = ""
 
     def __str__(self) -> str:
+        if self.kind == "roundtrip":
+            return (
+                f"roundtrip: inverse(forward({self.value!r})) -> {self.output}; "
+                f"{self.reason}"
+            )
         if self.mantissa is None:
             return f"date-kwargs: f({self.value!r}) -> {self.output}; {self.reason}"
         return (
@@ -243,6 +249,93 @@ def find_date_kwargs(
     return violations
 
 
+def _byte_probes() -> list[bytes]:
+    """Boundary byte strings that expose round-trip loss in int-based codecs.
+
+    The recurring break is a byte<->string codec that converts through an
+    integer (``int.from_bytes(b, "big")``): the integer cannot carry the *count*
+    of leading ``0x00`` bytes, so they vanish on the way back. The dangerous
+    inputs are therefore the empty string, all-zero strings, and any value with
+    leading zeros (plus a couple of trailing-zero / mixed cases as controls).
+    """
+    probes = [
+        b"",
+        b"\x00",
+        b"\x00\x00",
+        b"\x00\x00\x00",
+        b"\x00" * 16,
+        b"\x01",
+        b"\xff",
+        b"\x00\x01",
+        b"\x00\xff",
+        b"\x00\x00\x01",
+        b"\x00" * 8 + b"\x01\x02",
+        b"\x01\x00",
+        b"\xff\x00",
+        bytes(range(8)),
+    ]
+    return list(dict.fromkeys(probes))
+
+
+def find_roundtrip(
+    forward: Callable[[object], object],
+    inverse: Callable[[object], object],
+    *,
+    values: Iterable[object] | None = None,
+    eq: Callable[[object, object], bool] | None = None,
+) -> list[Violation]:
+    """Sweep boundary inputs and return every round-trip violation.
+
+    The invariant: an encode/decode (or serialize/parse) pair must be mutually
+    inverse — ``inverse(forward(x)) == x`` for all ``x``. The archetype break is
+    a byte<->string codec that routes through an integer
+    (``int.from_bytes(b, "big")``): leading ``0x00`` bytes carry no integer
+    weight, so they are dropped and never restored —
+    ``decodebytes(encodebytes(b"\\x00\\x01")) == b"\\x01"``, not ``b"\\x00\\x01"``.
+    The loss hides inside arithmetic that *looks* correct, so there is no stable
+    AST signature; it is checked as a property. Provenance: ``suminb/base62#22``
+    (``encodebytes``/``decodebytes`` round-trip, closing ``base62#18``).
+
+    ``forward`` and ``inverse`` are the pair under test. By default ``values`` is
+    the byte-boundary sweep from :func:`_byte_probes`; pass ``values`` for a
+    different domain (ints, strings, …). ``eq`` overrides equality (default
+    ``==``). Inputs that make either function *raise* are skipped — a crash is a
+    different bug class than a silent round-trip loss.
+    """
+    probes = list(values) if values is not None else _byte_probes()
+    same = eq or (lambda a, b: a == b)
+
+    seen: set[str] = set()
+    violations: list[Violation] = []
+    for x in probes:
+        try:
+            restored = inverse(forward(x))
+        except Exception:
+            continue
+        try:
+            ok = bool(same(restored, x))
+        except Exception:
+            ok = False
+        if not ok:
+            key = repr(x)
+            if key in seen:
+                continue
+            seen.add(key)
+            violations.append(
+                Violation(
+                    value=x,
+                    output=repr(restored),
+                    reason=(
+                        "inverse(forward(x)) != x: the round-trip dropped or "
+                        "altered the value (classically, leading zero bytes lost "
+                        "by an int-based codec)"
+                    ),
+                    kind="roundtrip",
+                )
+            )
+    return violations
+
+
 _RENDERED = """\
 # Rounding-rollover property test  (wildlint {code} — {name})
 #
@@ -324,6 +417,42 @@ def test_does_not_crash_on_date():
 """
 
 
+_ROUNDTRIP_RENDERED = """\
+# Encode/decode round-trip property test  (wildlint {code} — {name})
+#
+# Provenance: {provenance}
+#
+# Invariant: decoding an encoded value must reproduce the original exactly —
+# inverse(forward(x)) == x for all x. The recurring break is a byte<->string
+# codec that routes through an integer (int.from_bytes): leading 0x00 bytes carry
+# no integer weight, so they vanish and are never restored —
+# decodebytes(encodebytes(b"\\x00\\x01")) == b"\\x01", not b"\\x00\\x01". The loss
+# hides inside correct-looking int math, so it is checked as a property, not a
+# lint.
+#
+# Set {func}/{inverse} to your encode/decode pair (e.g. encodebytes/decodebytes).
+
+from wildlint.property_templates import find_roundtrip
+from {import_from} import {func}, {inverse}
+
+
+def test_encode_decode_roundtrip():
+    violations = find_roundtrip({func}, {inverse})
+    assert not violations, "\\n".join(str(v) for v in violations)
+
+
+# --- Self-contained hypothesis variant (no wildlint dependency) --------------
+# Uncomment if you prefer hypothesis; it fuzzes the whole byte domain, not just
+# the boundary probes.
+#
+# from hypothesis import given, strategies as st
+#
+# @given(st.binary(min_size=0, max_size=64))
+# def test_roundtrip_hypothesis(b):
+#     assert {inverse}({func}(b)) == b, f"round-trip changed {{b!r}}"
+"""
+
+
 @dataclass(frozen=True)
 class PropertyTemplate:
     """A property-test recipe for a class that resists a static rule."""
@@ -347,7 +476,10 @@ def _render_rollover(
     func: str = "humanize",
     import_from: str = "yourmodule",
     base: int = 1000,
+    inverse: str = "decode",
 ) -> str:
+    # ``inverse`` is accepted so the CLI can render every template with the same
+    # keyword set; the rollover property is unary and ignores it.
     return _RENDERED.format(
         code=tmpl.code,
         name=tmpl.name,
@@ -364,15 +496,36 @@ def _render_date_kwargs(
     func: str = "humanize",
     import_from: str = "yourmodule",
     base: int = 1000,
+    inverse: str = "decode",
 ) -> str:
-    # ``base`` is accepted solely so the CLI can call every template's render
-    # uniformly (func/import_from/base); the date-kwargs property has no base.
+    # ``base``/``inverse`` are accepted solely so the CLI can call every
+    # template's render uniformly; the date-kwargs property uses neither.
     return _DATE_KWARGS_RENDERED.format(
         code=tmpl.code,
         name=tmpl.name,
         provenance=", ".join(tmpl.provenance),
         func=func,
         import_from=import_from,
+    )
+
+
+def _render_roundtrip(
+    tmpl: PropertyTemplate,
+    *,
+    func: str = "encode",
+    import_from: str = "yourmodule",
+    base: int = 1000,
+    inverse: str = "decode",
+) -> str:
+    # ``base`` is accepted for a uniform CLI call; the round-trip property has no
+    # radix.
+    return _ROUNDTRIP_RENDERED.format(
+        code=tmpl.code,
+        name=tmpl.name,
+        provenance=", ".join(tmpl.provenance),
+        func=func,
+        import_from=import_from,
+        inverse=inverse,
     )
 
 
@@ -411,13 +564,33 @@ DATE_KWARGS = PropertyTemplate(
     _render=_render_date_kwargs,
 )
 
-TEMPLATES = [ROLLOVER, DATE_KWARGS]
+ROUNDTRIP = PropertyTemplate(
+    code="WP003",
+    name="codec-roundtrip",
+    tier=DEFAULT,
+    description=(
+        "An encode/decode (or serialize/parse) pair is not mutually inverse: "
+        "inverse(forward(x)) != x. The archetype is a byte<->string codec that "
+        "routes through an integer (int.from_bytes), so leading 0x00 bytes carry "
+        "no weight and are silently dropped on the round-trip."
+    ),
+    provenance=("suminb/base62#22", "base62#18"),
+    check=find_roundtrip,
+    _render=_render_roundtrip,
+)
+
+TEMPLATES = [ROLLOVER, DATE_KWARGS, ROUNDTRIP]
 
 
 def get_template(code_or_name: str) -> PropertyTemplate | None:
     """Look a template up by ``code`` (``WP001``) or ``name`` (``rollover``)."""
     key = code_or_name.strip().lower()
     for t in TEMPLATES:
-        if key in (t.code.lower(), t.name.lower(), t.name.replace("rounding-", "")):
+        aliases = (
+            t.code.lower(),
+            t.name.lower(),
+            t.name.replace("rounding-", "").replace("codec-", ""),
+        )
+        if key in aliases:
             return t
     return None

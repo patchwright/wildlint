@@ -14,9 +14,11 @@ import math
 from wildlint.property_templates import (
     DATE_KWARGS,
     ROLLOVER,
+    ROUNDTRIP,
     TEMPLATES,
     find_date_kwargs,
     find_rollover,
+    find_roundtrip,
     get_template,
 )
 
@@ -266,4 +268,124 @@ def test_rendered_date_kwargs_is_valid_python():
     import ast
 
     rendered = DATE_KWARGS.render(func="truncate", import_from="deepdiff")
+    ast.parse(rendered)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# find_roundtrip — encode/decode round-trip (WP003, suminb/base62#22)
+#
+# Faithful reproduction of the pre-fix bug (base62#18): encodebytes routed
+# through int.from_bytes, so leading 0x00 bytes carried no integer weight and
+# were dropped — decodebytes(encodebytes(b"\x00\x01")) == b"\x01", not the input.
+# ---------------------------------------------------------------------------
+
+_B62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _enc_int(n: int) -> str:
+    if n == 0:
+        return "0"
+    chs = []
+    while n > 0:
+        n, r = divmod(n, 62)
+        chs.insert(0, _B62[r])
+    return "".join(chs)
+
+
+def _dec_int(s: str) -> int:
+    v = 0
+    for ch in s:
+        v = v * 62 + _B62.index(ch)
+    return v
+
+
+def _int_to_bytes(n: int) -> bytes:
+    buf = bytearray()
+    while n > 0:
+        buf.append(n & 0xFF)
+        n >>= 8
+    buf.reverse()
+    return bytes(buf)
+
+
+def buggy_encodebytes(b: bytes) -> str:
+    # pre-fix: leading zero bytes are lost in the int conversion
+    return _enc_int(int.from_bytes(b, "big"))
+
+
+def buggy_decodebytes(s: str) -> bytes:
+    return _int_to_bytes(_dec_int(s))
+
+
+def correct_encodebytes(b: bytes) -> str:
+    # a 0x01 sentinel byte guards the high end so leading zeros survive
+    return _enc_int(int.from_bytes(b"\x01" + b, "big"))
+
+
+def correct_decodebytes(s: str) -> bytes:
+    return _int_to_bytes(_dec_int(s))[1:]
+
+
+def test_find_roundtrip_catches_the_real_bug():
+    violations = find_roundtrip(buggy_encodebytes, buggy_decodebytes)
+    assert violations
+    # the leading-zero inputs are exactly what break
+    broken = {v.value for v in violations}
+    assert b"\x00\x01" in broken
+    assert b"\x00" in broken
+
+
+def test_find_roundtrip_silent_on_correct_codec():
+    assert find_roundtrip(correct_encodebytes, correct_decodebytes) == []
+
+
+def test_find_roundtrip_silent_on_identity_pair():
+    assert find_roundtrip(lambda x: x, lambda x: x) == []
+
+
+def test_find_roundtrip_skips_crashing_inputs():
+    # A pair that raises on every probe is a different bug class (a crash), not a
+    # silent round-trip loss, so nothing is recorded.
+    def boom(_: object) -> object:
+        raise ValueError("nope")
+
+    assert find_roundtrip(boom, lambda x: x) == []
+
+
+def test_find_roundtrip_custom_values_and_eq():
+    # Non-byte domain: an int codec that mangles negatives, checked with ==.
+    violations = find_roundtrip(lambda n: abs(n), lambda n: n, values=[-1, 0, 5, -7])
+    bad = {v.value for v in violations}
+    assert bad == {-1, -7}
+
+
+def test_roundtrip_violation_str_is_actionable():
+    v = find_roundtrip(buggy_encodebytes, buggy_decodebytes)[0]
+    s = str(v)
+    assert "roundtrip" in s
+    assert "!= x" in s
+
+
+def test_get_template_wp003():
+    assert get_template("WP003") is ROUNDTRIP
+    assert get_template("codec-roundtrip") is ROUNDTRIP
+    assert get_template("roundtrip") is ROUNDTRIP
+
+
+def test_render_roundtrip_module():
+    rendered = ROUNDTRIP.render(
+        func="encodebytes", import_from="base62", inverse="decodebytes"
+    )
+    assert "from base62 import encodebytes, decodebytes" in rendered
+    assert "find_roundtrip(encodebytes, decodebytes)" in rendered
+    assert "def test_encode_decode_roundtrip():" in rendered
+    assert "suminb/base62#22" in rendered
+
+
+def test_rendered_roundtrip_is_valid_python():
+    import ast
+
+    rendered = ROUNDTRIP.render(
+        func="encodebytes", import_from="base62", inverse="decodebytes"
+    )
     ast.parse(rendered)  # must not raise

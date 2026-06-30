@@ -14,10 +14,11 @@ from .property_templates import (
     Violation,
     find_date_kwargs,
     find_rollover,
+    find_roundtrip,
     get_template,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "CHECKERS",
@@ -28,6 +29,7 @@ __all__ = [
     "Violation",
     "find_date_kwargs",
     "find_rollover",
+    "find_roundtrip",
     "get_template",
     "__version__",
 ]
