@@ -325,3 +325,45 @@ def test_wl005_not_in_default_tier():
 def test_wl005_silent_when_no_not_in_and_chain():
     src = "if a and b or c:\n    pass\n"
     assert "WL005" not in _codes(src, pedantic=True)
+
+
+def test_wl005_silent_when_and_chain_is_parenthesized():
+    # The v0.5.2 false positive: parens around the and-chain ITSELF (not moving
+    # the `or` inside the `and`) parse to the SAME tree as the unparenthesized
+    # bug -- ast.parse drops grouping parens. The checker must peek the source to
+    # tell "author disambiguated" from "author forgot precedence".
+    src = "if (not a and b) or c:\n    pass\n"
+    assert _codes(src, pedantic=True) == []
+
+
+def test_wl005_silent_when_and_chain_double_parenthesized():
+    src = "if ((not a and b)) or c:\n    pass\n"
+    assert _codes(src, pedantic=True) == []
+
+
+def test_wl005_silent_when_and_chain_wrapped_across_lines():
+    # The paren peek must use absolute offsets so a multi-line wrap counts --
+    # this is the shape of the real-world django hits in the v0.5.2 review.
+    src = "if (\n    not a and b\n) or c:\n    pass\n"
+    assert _codes(src, pedantic=True) == []
+
+
+def test_wl005_still_fires_when_not_scopes_only_one_operand():
+    # (not a) and b or c: the `not` scopes only `a`, so the trailing `or c`
+    # still escapes the leading guard -- parens here do NOT wrap the and-chain,
+    # so the precedence hazard is real and must still fire.
+    src = "if (not a) and b or c:\n    pass\n"
+    assert _codes(src, pedantic=True) == ["WL005"]
+
+
+def test_wl005_still_fires_on_unparenthesized_coolname_shape():
+    # Sanity: the real coolname #34 bug (no disambiguating parens) still fires.
+    src = "if not cfg.get('x') and self.a or self.b or self.c:\n    pass\n"
+    assert _codes(src, pedantic=True) == ["WL005"]
+
+
+def test_wl005_whole_expr_parens_do_not_suppress():
+    # (not a and b or c) wraps the WHOLE or-expr, not the and-chain -- the
+    # precedence ambiguity inside is unchanged, so it still fires.
+    src = "if (not a and b or c):\n    pass\n"
+    assert _codes(src, pedantic=True) == ["WL005"]

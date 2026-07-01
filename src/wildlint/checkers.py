@@ -7,8 +7,10 @@ to fire with an unacceptable false-positive rate are documented in
 ``NON_GENERALIZED`` rather than shipped.
 
 A checker is any object exposing ``code``, ``name``, ``tier`` and a
-``check(tree, path) -> list[Finding]`` method. Register one by appending an
-instance to ``CHECKERS``.
+``check(tree, path, source=None) -> list[Finding]`` method. ``source`` is the
+raw text the tree was parsed from (``None`` when unavailable); checkers that
+need to inspect grouping parentheses -- which ``ast.parse`` discards -- use it.
+Register one by appending an instance to ``CHECKERS``.
 """
 
 from __future__ import annotations
@@ -36,6 +38,20 @@ def _str_const(node: ast.expr) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     return None
+
+
+def _line_start_offsets(source: str) -> list[int]:
+    """Absolute string index of the first char of each 1-based source line.
+
+    Lets a checker translate an AST node's ``(lineno, col_offset)`` /
+    ``(end_lineno, end_col_offset)`` -- which ignore grouping parentheses and
+    may span newlines -- into absolute offsets for a source-text peek.
+    """
+    offsets = [0]
+    for i, ch in enumerate(source):
+        if ch == "\n":
+            offsets.append(i + 1)
+    return offsets
 
 
 # Actions that store no useful attribute on the namespace.
@@ -136,7 +152,9 @@ class ReplaceToEmptyPrefix:
             return False
         return ast.unparse(node.func.value) == receiver_src
 
-    def check(self, tree: ast.AST, path: str) -> list[Finding]:
+    def check(
+        self, tree: ast.AST, path: str, source: str | None = None
+    ) -> list[Finding]:
         out: list[Finding] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.If):
@@ -189,7 +207,9 @@ class SplitSingleSpace:
     name = "split-single-space"
     tier = PEDANTIC
 
-    def check(self, tree: ast.AST, path: str) -> list[Finding]:
+    def check(
+        self, tree: ast.AST, path: str, source: str | None = None
+    ) -> list[Finding]:
         out: list[Finding] = []
         for node in ast.walk(tree):
             if not (
@@ -232,7 +252,9 @@ class NegativeIndexNoGuard:
     name = "negative-index-no-guard"
     tier = PEDANTIC
 
-    def check(self, tree: ast.AST, path: str) -> list[Finding]:
+    def check(
+        self, tree: ast.AST, path: str, source: str | None = None
+    ) -> list[Finding]:
         out: list[Finding] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.Subscript):
@@ -311,7 +333,9 @@ class ArgparseDeadDest:
             return any(isinstance(a, ast.Name) and a.id in ns_names for a in node.args)
         return False
 
-    def check(self, tree: ast.AST, path: str) -> list[Finding]:
+    def check(
+        self, tree: ast.AST, path: str, source: str | None = None
+    ) -> list[Finding]:
         add_calls: list[tuple[str, str, int, int]] = []
         ns_names: set[str] = set()  # variables holding an argparse Namespace
         for node in ast.walk(tree):
@@ -409,13 +433,58 @@ class NotAndInOr:
             for v in node.values
         )
 
-    def check(self, tree: ast.AST, path: str) -> list[Finding]:
+    @staticmethod
+    def _chain_is_parenthesized(
+        node: ast.expr, source: str | None, line_starts: list[int] | None
+    ) -> bool:
+        """Whether ``node``'s source span is wrapped in a matching ``(...)`` pair.
+
+        ``ast.parse`` discards grouping parentheses, so ``(not a and b) or c``
+        and the unparenthesized bug parse to the *same* tree. Wrapping parens
+        are the author signalling "I scoped this and-chain on purpose", at which
+        point the precedence the rule warns about is no longer ambiguous, so we
+        suppress. We peek the source immediately around the node's span (skipping
+        whitespace/newlines, so a multi-line ``(\\n not a and b\\n)`` counts) --
+        the same trick flake8-bugbear uses for parenthesization-sensitive checks.
+        Only a pair wrapping *this* node suppresses: ``(not a) and b`` scopes the
+        ``not`` to ``a`` alone and the trailing ``or`` still escapes, so it stays
+        a real finding.
+        """
+        if source is None or line_starts is None:
+            return False
+        if node.end_lineno is None or node.end_col_offset is None:
+            return False  # parsed without end-position metadata (pre-3.8 mode)
+        start = line_starts[node.lineno - 1] + node.col_offset
+        end = line_starts[node.end_lineno - 1] + node.end_col_offset
+        i = start - 1
+        while i >= 0 and source[i] in " \t\n\r":
+            i -= 1
+        if i < 0 or source[i] != "(":
+            return False
+        j = end
+        while j < len(source) and source[j] in " \t\n\r":
+            j += 1
+        if j >= len(source) or source[j] != ")":
+            return False
+        return True
+
+    def check(
+        self, tree: ast.AST, path: str, source: str | None = None
+    ) -> list[Finding]:
         out: list[Finding] = []
+        line_starts = _line_start_offsets(source) if source is not None else None
         for node in ast.walk(tree):
             if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
                 continue
             for val in node.values:
                 if isinstance(val, ast.BoolOp) and self._and_chain_has_not(val):
+                    # ``(not a and b) or c`` parses identically to the
+                    # unparenthesized bug -- ast drops the grouping parens. If
+                    # the and-chain is wrapped in source, the author
+                    # disambiguated and the precedence is no longer ambiguous,
+                    # so suppress (see _chain_is_parenthesized).
+                    if self._chain_is_parenthesized(val, source, line_starts):
+                        continue
                     out.append(
                         Finding(
                             path,
@@ -463,7 +532,7 @@ def check_source(
     tree = ast.parse(source)
     findings: list[Finding] = []
     for checker in select_checkers(pedantic=pedantic, codes=codes):
-        findings.extend(checker.check(tree, path))
+        findings.extend(checker.check(tree, path, source))
     findings.sort(key=lambda f: (f.line, f.col, f.code))
     return findings
 
