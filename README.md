@@ -12,6 +12,16 @@ the *class* without flooding you with false positives. If a bug could not be
 turned into a low-noise rule, it is documented as not-shipped rather than added
 as noise (see [Not shipped](#bugs-considered-but-not-shipped)).
 
+## What it catches
+
+Real bugs, phrased the way you'd search them:
+
+- **"my argparse flag parses but does nothing"** — an option whose `dest` is never read (WL004)
+- **`x.replace(prefix, "")` corrupts values containing the marker twice** — meant `str.removeprefix`/`removesuffix` (WL001)
+- **`s[-k]` raises IndexError on short inputs** — deep negative indexing (WL003)
+- **`millify(999999)` returns `'1000k'` not `'1M'`** — rounding rollover in number/byte humanizers (WP001)
+- **`.replace(second=0)` crashes on a bare `datetime.date`** — datetime-subclass confusion (WP002)
+
 ## Install
 
 ```bash
@@ -35,7 +45,7 @@ pre-commit hook.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/patchwright/wildlint
-    rev: v0.4.0
+    rev: v0.5.0
     hooks:
       - id: wildlint
 ```
