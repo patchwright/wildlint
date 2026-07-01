@@ -262,6 +262,72 @@ def test_wl004_silent_when_all_wired():
     assert "WL004" not in _codes(src)
 
 
+def test_wl004_silent_when_dest_read_via_alias():
+    # A dest read through a plain alias (`alias = args`) counts as consumed --
+    # the gap that flagged it dead. The direct `args.text` read makes the "at
+    # least one dest wired" gate pass; `alias.regex_pattern` must then count too.
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    args = p.parse_args(argv)\n"
+        "    alias = args\n"
+        "    return (args.text, alias.regex_pattern)\n"
+    )
+    assert _codes(src) == []
+
+
+def test_wl004_silent_through_chained_alias():
+    # cfg -> ns -> args -> parse_args: the alias fixpoint must follow the chain.
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    args = p.parse_args(argv)\n"
+        "    ns = args\n"
+        "    cfg = ns\n"
+        "    return (args.text, cfg.regex_pattern)\n"
+    )
+    assert _codes(src) == []
+
+
+def test_wl004_silent_with_multi_target_alias():
+    # `a = b = args`: both new names alias the namespace.
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    args = p.parse_args(argv)\n"
+        "    a = b = args\n"
+        "    return (args.text, a.regex_pattern, b.text)\n"
+    )
+    assert _codes(src) == []
+
+
+def test_wl004_still_fires_when_dest_truly_dead_alongside_alias():
+    # Aliasing a consumed dest must not suppress a genuinely-dead sibling:
+    # regex_pattern is never read anywhere (direct or via the alias); text is.
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    args = p.parse_args(argv)\n"
+        "    alias = args\n"
+        "    return (args.text, alias.text)\n"
+    )
+    out = check_source(src, "cli.py")
+    assert [f.code for f in out] == ["WL004"]
+    assert "regex_pattern" in out[0].message
+
+
 # --------------------------------------------------------------------------- #
 # selection / tier behavior
 # --------------------------------------------------------------------------- #

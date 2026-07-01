@@ -364,15 +364,25 @@ class ArgparseDeadDest:
     ) -> list[Finding]:
         add_calls: list[tuple[str, str, int, int]] = []
         ns_names: set[str] = set()  # variables holding an argparse Namespace
+        alias_sources: dict[str, set[str]] = {}  # `alias = name` edges (Name->Name)
         for node in ast.walk(tree):
-            # A namespace flows in from `x = ....parse_args(...)` ...
-            if (
-                isinstance(node, ast.Assign)
-                and isinstance(node.value, ast.Call)
-                and isinstance(node.value.func, ast.Attribute)
-                and node.value.func.attr == "parse_args"
-            ):
-                ns_names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            if isinstance(node, ast.Assign):
+                # A namespace flows in from `x = ....parse_args(...)` ...
+                if (
+                    isinstance(node.value, ast.Call)
+                    and isinstance(node.value.func, ast.Attribute)
+                    and node.value.func.attr == "parse_args"
+                ):
+                    ns_names.update(
+                        t.id for t in node.targets if isinstance(t, ast.Name)
+                    )
+                # ... or through a plain alias `alias = name` (resolved against
+                # ns_names after the walk), so a dest read via the alias counts
+                # and a consumed flag isn't reported dead.
+                elif isinstance(node.value, ast.Name):
+                    for t in node.targets:
+                        if isinstance(t, ast.Name):
+                            alias_sources.setdefault(t.id, set()).add(node.value.id)
             # ... or from a parameter annotated `argparse.Namespace`.
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 a = node.args
@@ -391,6 +401,18 @@ class ArgparseDeadDest:
                         add_calls.append(
                             (dest[0], dest[1], node.lineno, node.col_offset)
                         )
+
+        # Propagate aliases: a name reachable from a known namespace through
+        # `alias = X` edges is another handle on it, so `alias.dest` counts as a
+        # real read. Fixpoint covers chains (`cfg = ns; ns = args`). Conservative
+        # -- reassigning a namespace name to a non-namespace is not unwound
+        # (WL004 favours false negatives over false positives).
+        prev = -1
+        while len(ns_names) != prev:
+            prev = len(ns_names)
+            for tgt, srcs in alias_sources.items():
+                if tgt not in ns_names and srcs & ns_names:
+                    ns_names.add(tgt)
 
         # No locally-bound namespace -> this is a parse-only / definitions file;
         # the dests are consumed elsewhere and cannot be judged here.
