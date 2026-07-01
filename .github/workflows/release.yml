@@ -10,7 +10,25 @@ on:
     tags: ["v*"]
 
 jobs:
+  corpus:
+    # Enforced gate: a tag cannot reach PyPI unless finding counts over the
+    # pinned real-world corpus match scripts/corpus_baseline.json. Turns the old
+    # "RELEASING.md checklist a human must remember" into pipeline enforcement --
+    # a WL005-style regression (django 3 -> 34 hits) fails here, pre-publish,
+    # instead of shipping at a 90% false-positive rate. Fails closed: if the job
+    # itself errors it blocks a good release (recoverable), it never ships bad
+    # code. See scripts/corpus_diff.py.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+      - name: corpus_diff (finding counts vs baseline)
+        run: uv run --python 3.13 python scripts/corpus_diff.py
+
   build-and-publish:
+    needs: corpus  # a tag physically cannot publish unless the corpus gate passed
     runs-on: ubuntu-latest
     permissions:
       id-token: write  # required for trusted publishing
