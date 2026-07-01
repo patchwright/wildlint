@@ -16,7 +16,9 @@ Register one by appending an instance to ``CHECKERS``.
 from __future__ import annotations
 
 import ast
+import tokenize
 from dataclasses import dataclass
+from io import StringIO
 
 DEFAULT = "default"  # low false-positive; on unless deselected
 PEDANTIC = "pedantic"  # higher false-positive; opt-in via --pedantic
@@ -40,18 +42,42 @@ def _str_const(node: ast.expr) -> str | None:
     return None
 
 
-def _line_start_offsets(source: str) -> list[int]:
-    """Absolute string index of the first char of each 1-based source line.
+def _significant_tokens(source: str) -> list[tokenize.TokenInfo]:
+    """Source tokens with comments and layout noise stripped.
 
-    Lets a checker translate an AST node's ``(lineno, col_offset)`` /
-    ``(end_lineno, end_col_offset)`` -- which ignore grouping parentheses and
-    may span newlines -- into absolute offsets for a source-text peek.
+    Parenthesization is invisible to ``ast.parse`` (grouping parens are not in
+    the tree), so WL005 recovers it from the token stream: with comments,
+    newlines and indentation removed, a parenthesized operand sits directly
+    between an ``(`` and ``)`` OP token. Token space -- rather than a raw
+    character peek -- so a comment *inside* the parens no longer defeats the
+    check (django/forms/models.py puts a ``# ForeignKey ...`` comment between
+    the ``(`` and the and-chain). Returns an empty list if the source did not
+    tokenize cleanly, in which case callers fall back to firing.
     """
-    offsets = [0]
-    for i, ch in enumerate(source):
-        if ch == "\n":
-            offsets.append(i + 1)
-    return offsets
+    tokens: list[tokenize.TokenInfo] = []
+    try:
+        for tok in tokenize.generate_tokens(StringIO(source).readline):
+            if tok.type not in _INSIGNIFICANT_TOKENS:
+                tokens.append(tok)
+    except tokenize.TokenError:
+        return []
+    return tokens
+
+
+# Token types that carry no syntactic weight between a paren and its operand:
+# comments and layout noise. Dropping them lets a paren-adjacency check ignore
+# whatever the author put *visually* between a ``(`` and its expression.
+_INSIGNIFICANT_TOKENS = frozenset(
+    {
+        tokenize.COMMENT,
+        tokenize.NL,
+        tokenize.NEWLINE,
+        tokenize.INDENT,
+        tokenize.DEDENT,
+        tokenize.ENCODING,
+        tokenize.ENDMARKER,
+    }
+)
 
 
 # Actions that store no useful attribute on the namespace.
@@ -435,44 +461,54 @@ class NotAndInOr:
 
     @staticmethod
     def _chain_is_parenthesized(
-        node: ast.expr, source: str | None, line_starts: list[int] | None
+        node: ast.expr, tokens: list[tokenize.TokenInfo]
     ) -> bool:
         """Whether ``node``'s source span is wrapped in a matching ``(...)`` pair.
 
         ``ast.parse`` discards grouping parentheses, so ``(not a and b) or c``
         and the unparenthesized bug parse to the *same* tree. Wrapping parens
-        are the author signalling "I scoped this and-chain on purpose", at which
-        point the precedence the rule warns about is no longer ambiguous, so we
-        suppress. We peek the source immediately around the node's span (skipping
-        whitespace/newlines, so a multi-line ``(\\n not a and b\\n)`` counts) --
-        the same trick flake8-bugbear uses for parenthesization-sensitive checks.
-        Only a pair wrapping *this* node suppresses: ``(not a) and b`` scopes the
-        ``not`` to ``a`` alone and the trailing ``or`` still escapes, so it stays
-        a real finding.
+        signal "I scoped this on purpose", at which point the precedence the
+        rule warns about is no longer ambiguous, so we suppress.
+
+        Working in token space (comments/layout already stripped by
+        ``_significant_tokens``), find the node's first and last significant
+        tokens and check the ones immediately around them: if they are ``(`` and
+        ``)``, the node is parenthesized. Token space -- not raw characters --
+        so a comment *inside* the parens (``(\\n # why\\n not a and b\\n)``) no
+        longer defeats the check, the gap that left a real false positive in
+        django/forms/models.py. Only a pair wrapping *this* node suppresses:
+        ``(not a) and b`` scopes the ``not`` to ``a`` alone and the trailing
+        ``or`` still escapes, so it stays a real finding.
         """
-        if source is None or line_starts is None:
-            return False
         if node.end_lineno is None or node.end_col_offset is None:
             return False  # parsed without end-position metadata (pre-3.8 mode)
-        start = line_starts[node.lineno - 1] + node.col_offset
-        end = line_starts[node.end_lineno - 1] + node.end_col_offset
-        i = start - 1
-        while i >= 0 and source[i] in " \t\n\r":
-            i -= 1
-        if i < 0 or source[i] != "(":
+        start = (node.lineno, node.col_offset)
+        end = (node.end_lineno, node.end_col_offset)
+        first = last = None
+        for idx, tok in enumerate(tokens):
+            if first is None and tok.start == start:
+                first = idx
+            if tok.end == end and first is not None:
+                last = idx
+                break
+        if first is None or last is None:
             return False
-        j = end
-        while j < len(source) and source[j] in " \t\n\r":
-            j += 1
-        if j >= len(source) or source[j] != ")":
-            return False
-        return True
+        left = tokens[first - 1] if first > 0 else None
+        right = tokens[last + 1] if last + 1 < len(tokens) else None
+        return (
+            left is not None
+            and left.type == tokenize.OP
+            and left.string == "("
+            and right is not None
+            and right.type == tokenize.OP
+            and right.string == ")"
+        )
 
     def check(
         self, tree: ast.AST, path: str, source: str | None = None
     ) -> list[Finding]:
         out: list[Finding] = []
-        line_starts = _line_start_offsets(source) if source is not None else None
+        tokens = _significant_tokens(source) if source is not None else None
         for node in ast.walk(tree):
             if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
                 continue
@@ -483,7 +519,7 @@ class NotAndInOr:
                     # the and-chain is wrapped in source, the author
                     # disambiguated and the precedence is no longer ambiguous,
                     # so suppress (see _chain_is_parenthesized).
-                    if self._chain_is_parenthesized(val, source, line_starts):
+                    if tokens is not None and self._chain_is_parenthesized(val, tokens):
                         continue
                     out.append(
                         Finding(

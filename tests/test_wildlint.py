@@ -367,3 +367,45 @@ def test_wl005_whole_expr_parens_do_not_suppress():
     # precedence ambiguity inside is unchanged, so it still fires.
     src = "if (not a and b or c):\n    pass\n"
     assert _codes(src, pedantic=True) == ["WL005"]
+
+
+def test_wl005_silent_when_comment_after_open_paren():
+    # The v0.5.3 char-peek gap: a comment between the `(` and the and-chain
+    # defeated suppression. Tokenizing strips COMMENT tokens, so a deliberately
+    # parenthesized clause with an explanatory comment is now correctly silent.
+    src = (
+        "def f(a, b, c):\n"
+        "    return a or (\n"
+        "        # explanatory comment\n"
+        "        not b\n"
+        "        and c\n"
+        "    )\n"
+    )
+    assert _codes(src, pedantic=True) == []
+
+
+def test_wl005_silent_when_comment_before_close_paren():
+    # Same gap on the trailing side: comment between the and-chain and the `)`.
+    src = (
+        "def f(a, b, c):\n"
+        "    return a or (\n"
+        "        not b and c\n"
+        "        # trailing comment\n"
+        "    )\n"
+    )
+    assert _codes(src, pedantic=True) == []
+
+
+def test_wl005_django_models_comment_in_parens_real_shape():
+    # The real django/forms/models.py:1253 shape that motivated the
+    # comment-aware (tokenize) fix: parenthesized clause with a leading comment.
+    src = (
+        "def f(fk, parent_model, all_parents):\n"
+        "    return fk.remote_field.model._meta.proxy or (\n"
+        "        # ForeignKey to concrete models.\n"
+        "        not fk.remote_field.model._meta.proxy\n"
+        "        and fk.remote_field.model != parent_model\n"
+        "        and fk.remote_field.model not in all_parents\n"
+        "    )\n"
+    )
+    assert _codes(src, pedantic=True) == []
