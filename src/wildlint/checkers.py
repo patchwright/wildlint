@@ -374,11 +374,63 @@ class ArgparseDeadDest:
         return out
 
 
+# --------------------------------------------------------------------------- #
+# WL005 — `not A and B or C` precedence (and binds tighter than or)
+# Origin: alexanderlukanin13/coolname PR #34
+# --------------------------------------------------------------------------- #
+class NotAndInOr:
+    """``not A and B or C`` -- ``and`` binds tighter than ``or``, so the leading
+    ``not A and`` guards only ``B``, not the trailing ``or`` branches. The author
+    almost always meant ``not A and (B or C)``. In coolname #34 this ran
+    ``_check_not_hanging()`` even with ``__nocheck`` set, because the
+    ``or check_prefix or max_slug_length`` branches escaped the guard.
+
+    Narrow: fires only when an ``and``-chain containing a ``not`` is a direct
+    operand of an ``or``-chain (the ``or``-context is the missing-parens signal;
+    bare ``not A and B`` is too often intentional). Pedantic: the compound can
+    be legitimate, so opt-in.
+    """
+
+    code = "WL005"
+    name = "not-and-in-or-precedence"
+    tier = PEDANTIC
+
+    @staticmethod
+    def _and_chain_has_not(node: ast.BoolOp) -> bool:
+        return isinstance(node.op, ast.And) and any(
+            isinstance(v, ast.UnaryOp) and isinstance(v.op, ast.Not)
+            for v in node.values
+        )
+
+    def check(self, tree: ast.AST, path: str) -> list[Finding]:
+        out: list[Finding] = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
+                continue
+            for val in node.values:
+                if isinstance(val, ast.BoolOp) and self._and_chain_has_not(val):
+                    out.append(
+                        Finding(
+                            path,
+                            val.lineno,
+                            val.col_offset,
+                            self.code,
+                            "`not A and B or C`: `and` binds tighter than `or`, "
+                            "so the leading `not A and` guards only B, not the "
+                            "trailing `or` branches; if the guard should cover "
+                            "all, write `not A and (B or C)` (coolname #34).",
+                        )
+                    )
+                    break  # one finding per `or` chain
+        return out
+
+
 CHECKERS = [
     ReplaceToEmptyPrefix(),
     SplitSingleSpace(),
     NegativeIndexNoGuard(),
     ArgparseDeadDest(),
+    NotAndInOr(),
 ]
 
 

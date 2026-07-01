@@ -257,3 +257,34 @@ def test_syntax_error_does_not_crash_check_source():
 
     with pytest.raises(SyntaxError):
         check_source("def (:\n", "t.py")
+
+
+# --------------------------------------------------------------------------- #
+# WL005 — `not A and B or C` precedence (coolname #34)
+# --------------------------------------------------------------------------- #
+def test_wl005_fires_on_not_and_in_or():
+    # the coolname #34 shape: not X and Y or Z or W
+    src = "if not a and b or c or d:\n    pass\n"
+    assert _codes(src, pedantic=True) == ["WL005"]
+
+
+def test_wl005_coolname_origin_shape():
+    # mirrors coolname #34: not config.get(...) and self.a or self.b or self.c
+    src = "if not cfg.get('x') and self.a or self.b or self.c:\n    pass\n"
+    assert "WL005" in _codes(src, pedantic=True)
+
+
+def test_wl005_silent_when_parenthesized():
+    # the fix: not X and (Y or Z) -- the `or` is now inside the `and`
+    src = "if not a and (b or c or d):\n    pass\n"
+    assert "WL005" not in _codes(src, pedantic=True)
+
+
+def test_wl005_not_in_default_tier():
+    src = "if not a and b or c:\n    pass\n"
+    assert "WL005" not in _codes(src)  # default tier must not run WL005
+
+
+def test_wl005_silent_when_no_not_in_and_chain():
+    src = "if a and b or c:\n    pass\n"
+    assert "WL005" not in _codes(src, pedantic=True)
