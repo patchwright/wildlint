@@ -3,14 +3,25 @@
 [![CI](https://github.com/patchwright/wildlint/actions/workflows/ci.yml/badge.svg)](https://github.com/patchwright/wildlint/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/wildlint.svg)](https://pypi.org/project/wildlint/)
 
-Static checks distilled from **real upstream bugs** — the kind off-the-shelf
-linters miss because they look like ordinary, working code.
+Static checks for bug classes off-the-shelf linters (ruff/flake8/pylint) don't
+cover — the kind that look like ordinary, working code.
 
-Every rule here was born from a concrete bug that was found and fixed in a
-public project, then generalized to the smallest static check that still catches
-the *class* without flooding you with false positives. If a bug could not be
-turned into a low-noise rule, it is documented as not-shipped rather than added
-as noise (see [Not shipped](#bugs-considered-but-not-shipped)).
+**What this is, honestly:** a *precision* tool for a handful of specific bug
+classes, not a general-purpose linter. Its value is measured two ways —
+near-zero false positives on already-clean code (the default tier is silent on
+mature, heavily-linted codebases like django/click/flask by design), and
+catching the bug where it exists (WL004, for example, finds a real dead
+`argparse` flag in python-slugify that ruff does not). It is **not** a
+high-recall scanner: on most real-world code it finds nothing, and that is the
+point of a low-noise rule set. If a bug could not be turned into a low-noise
+rule it is documented as [not shipped](#bugs-considered-but-not-shipped) rather
+than added as noise.
+
+Every rule traces to a concrete upstream bug, but how much *independent*
+validation each one has varies — and that's shown plainly in the provenance
+column of the [rules table](#rules) rather than implied by uniform-looking
+citation: two were merged by unaffiliated maintainers, one was independently
+duplicated by a stranger, and two are still self-submitted and unreviewed.
 
 ## What it catches
 
@@ -55,7 +66,7 @@ findings stay on stdout, so it drops straight into CI or a pre-commit hook.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/patchwright/wildlint
-    rev: v0.6.1
+    rev: v0.6.2
     hooks:
       - id: wildlint
 ```
@@ -80,13 +91,19 @@ exclude = ["vendor/*"]   # additional path globs to skip
 
 ## Rules
 
-| Code  | Tier     | Catches | Distilled from |
-|-------|----------|---------|----------------|
-| WL001 | default  | `x.replace(P, "")` guarded by `x.startswith(P)`/`endswith(P)` — removes *every* occurrence, silently corrupting values that contain the marker twice. Meant `str.removeprefix`/`removesuffix`. | [nephila/giturlparse#149](https://github.com/nephila/giturlparse/pull/149) |
-| WL002 | pedantic | `s.split(' ')` where `s.split()` was meant — keeps empty tokens and skips whitespace collapsing/trimming, leaking blanks downstream. Advisory and opt-in: only an exact single-space literal fires, and it's frequently intentional. | [derek73/python-nameparser#164](https://github.com/derek73/python-nameparser/pull/164) |
-| WL003 | pedantic | `x[-k]` with `k >= 2` — `IndexError` when the sequence is shorter than `k`. Opt-in because deep negative indexing is often provably safe from context the checker can't see. | [savoirfairelinux/num2words#661](https://github.com/savoirfairelinux/num2words/pull/661) |
-| WL004 | default  | An `argparse` option whose `dest` is never read — the flag parses, then silently vanishes. Fires only when *sibling* dests on the same namespace **are** read in the file (so consumption is local and the gap is an oversight). Bails on `vars()`/`getattr`/`**`-splat namespaces and on definitions-only files. | [un33k/python-slugify#180](https://github.com/un33k/python-slugify/pull/180) |
-| WL005 | pedantic (advisory) | `not A and B or C` — `and` binds tighter than `or`, so the leading `not A and` guards only B, not the trailing `or` branches. **Advisory**: flags precedence ambiguity for review (most hits are legitimate conditions, not bugs); write `not A and (B or C)` if the guard should cover all branches. Explicitly parenthesized and-chains are recognized and suppressed. | [alexanderlukanin13/coolname#34](https://github.com/alexanderlukanin13/coolname/pull/34) |
+| Code  | Tier     | Catches | Provenance & independent validation |
+|-------|----------|---------|-------------------------------------|
+| WL001 | default  | `x.replace(P, "")` guarded by `x.startswith(P)`/`endswith(P)` — removes *every* occurrence, silently corrupting values that contain the marker twice. Meant `str.removeprefix`/`removesuffix`. | ✅ **merged** by the maintainer — [giturlparse#152](https://github.com/nephila/giturlparse/pull/152) |
+| WL002 | pedantic | `s.split(' ')` where `s.split()` was meant — keeps empty tokens and skips whitespace collapsing/trimming, leaking blanks downstream. Advisory and opt-in: only an exact single-space literal fires, and it's frequently intentional. | ✅ **merged** by the maintainer — [nameparser#164](https://github.com/derek73/python-nameparser/pull/164) |
+| WL003 | pedantic | `x[-k]` with `k >= 2` — `IndexError` when the sequence is shorter than `k`. Opt-in because deep negative indexing is often provably safe from context the checker can't see. | ⏳ open, self-submitted — **no independent review yet** — [num2words#661](https://github.com/savoirfairelinux/num2words/pull/661) |
+| WL004 | default  | An `argparse` option whose `dest` is never read — the flag parses, then silently vanishes. Fires only when *sibling* dests on the same namespace **are** read in the file (so consumption is local and the gap is an oversight). Bails on `vars()`/`getattr`/`**`-splat namespaces and on definitions-only files. | ✅ **independently duplicated** by an unaffiliated developer (the strongest validation here) — [slugify#176](https://github.com/un33k/python-slugify/pull/176), reported [#175](https://github.com/un33k/python-slugify/issues/175) |
+| WL005 | pedantic (advisory) | `not A and B or C` — `and` binds tighter than `or`, so the leading `not A and` guards only B, not the trailing `or` branches. **Advisory**: flags precedence ambiguity for review (most hits are legitimate conditions, not bugs); write `not A and (B or C)` if the guard should cover all branches. Explicitly parenthesized and-chains are recognized and suppressed. | ⏳ open, self-submitted — **no independent review yet** — [coolname#34](https://github.com/alexanderlukanin13/coolname/pull/34) |
+
+**On the provenance column:** ✅ = the fix was accepted (or independently
+re-discovered) by someone with no connection to this tool — the strongest
+evidence a rule's bug class is real. ⏳ = the PR is still open and unreviewed;
+the rule may well be correct, but right now the only validation is the author's.
+Treat those two (WL003, WL005) with commensurate caution.
 
 The **default** tier is WL001 and WL004 — both have effectively zero false
 positives. WL002, WL003, and WL005 are opt-in via `--pedantic`: real bug classes,

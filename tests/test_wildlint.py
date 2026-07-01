@@ -475,3 +475,11 @@ def test_wl005_django_models_comment_in_parens_real_shape():
         "    )\n"
     )
     assert _codes(src, pedantic=True) == []
+
+
+def test_wl005_message_marked_advisory():
+    # The terminal finding text must carry the "advisory" calibration, not just
+    # the docstring/README -- someone running --pedantic in a hurry reads stdout.
+    src = "if not a and b or c:\n    pass\n"
+    out = check_source(src, "t.py", pedantic=True)
+    assert out and "advisory" in out[0].message.lower()

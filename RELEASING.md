@@ -35,9 +35,15 @@ with substance, not caution dressed as a rule.)
 
 ### additionally — WL static rules (lint that fires on real code)
 
-- [ ] **FP-corpus swept**: 0 unintended findings across ≥10 real packages that
-      use the pattern (e.g. real argparse CLIs for WL004). Default tier only if
-      FP≈0; otherwise `pedantic`. (The WL004 httpie 46→0 fix is the precedent.)
+- [ ] **corpus_diff gate green**: `uv run python scripts/corpus_diff.py` shows no
+      drift vs `scripts/corpus_baseline.json` (finding counts over a pinned
+      django/werkzeug/jinja2/flask/click/slugify corpus). A jump — e.g. a WL005
+      regression taking django from 3 to 34 hits — fails here before the tag, not
+      after release via external red-teaming. If a count change is intended (a
+      real fix), re-run with `--update` and record why in the commit. Default
+      tier must stay FP≈0 on the corpus; pedantic-tier counts are tracked but
+      advisory. (Automates the old "FP-corpus swept" item; the WL004 httpie
+      46→0 fix is the precedent.)
 
 ### additionally — WP property templates (opt-in property tests)
 

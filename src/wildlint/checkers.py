@@ -559,10 +559,11 @@ class NotAndInOr:
                             val.lineno,
                             val.col_offset,
                             self.code,
-                            "`not A and B or C`: `and` binds tighter than `or`, "
-                            "so the leading `not A and` guards only B, not the "
-                            "trailing `or` branches; if the guard should cover "
-                            "all, write `not A and (B or C)` (coolname #34).",
+                            "advisory: `not A and B or C` -- `and` binds tighter "
+                            "than `or`, so the leading `not A and` guards only B, "
+                            "not the trailing `or` branches; review whether the "
+                            "guard should cover all (write `not A and (B or C)`) "
+                            "-- most hits are legitimate (coolname #34).",
                         )
                     )
                     break  # one finding per `or` chain
