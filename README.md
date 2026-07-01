@@ -31,13 +31,21 @@ pip install wildlint
 ## Use
 
 ```bash
-wildlint path/to/code        # scan a file or directory (default: .)
+wildlint path/to/code            # scan a file or directory (default: .)
 wildlint --select WL001,WL002 src/
-wildlint --pedantic src/     # also run opt-in, higher-false-positive rules
+wildlint --pedantic src/         # also run opt-in, higher-false-positive rules
+wildlint --format json src/      # machine-readable output
 ```
 
-Exits non-zero when anything is found, so it drops straight into CI or a
-pre-commit hook.
+When walking a directory, common junk (`.venv`, `__pycache__`, `build`, `dist`,
+`.git`, `node_modules`, …) is skipped automatically — pass `--no-default-exclude`
+to scan everything, or `--exclude 'glob/*'` to drop more. Explicit file and
+directory arguments are always scanned as-is. Silence a finding inline with a
+trailing `# noqa` (all codes) or `# noqa: WL001,WL002` (specific).
+
+Exits non-zero when anything is found **or** a file could not be analysed (a
+syntax error, non-UTF-8, or a missing path); the diagnostic goes to stderr and
+findings stay on stdout, so it drops straight into CI or a pre-commit hook.
 
 ### pre-commit
 
@@ -45,7 +53,7 @@ pre-commit hook.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/patchwright/wildlint
-    rev: v0.5.4
+    rev: v0.6.0
     hooks:
       - id: wildlint
 ```
@@ -55,6 +63,17 @@ repos:
 ```yaml
 - run: pip install wildlint
 - run: wildlint src/
+```
+
+### Configuration
+
+`[tool.wildlint]` in `pyproject.toml` sets defaults that CLI flags override:
+
+```toml
+[tool.wildlint]
+pedantic = true          # run opt-in rules by default
+select = ["WL001"]       # restrict to these codes
+exclude = ["vendor/*"]   # additional path globs to skip
 ```
 
 ## Rules
@@ -155,7 +174,7 @@ recorded in `NON_GENERALIZED` in `checkers.py` so the reasoning is preserved:
 ## Adding a rule
 
 A checker is any object with `code`, `name`, `tier`, and
-`check(tree, path) -> list[Finding]`. Append an instance to `CHECKERS` in
+`check(tree, path, source=None) -> list[Finding]`. Append an instance to `CHECKERS` in
 `checkers.py` and add positive/negative tests mirroring the wild bug. That's the
 whole extension surface — the suite grows one real bug at a time.
 
