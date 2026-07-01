@@ -45,7 +45,7 @@ pre-commit hook.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/patchwright/wildlint
-    rev: v0.5.0
+    rev: v0.5.1
     hooks:
       - id: wildlint
 ```
