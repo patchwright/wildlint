@@ -248,10 +248,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--pedantic",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=None,
-        help="also run opt-in higher-false-positive rules "
-        "(overridable via [tool.wildlint])",
+        help="also run opt-in higher-false-positive rules (--no-pedantic "
+        "overrides [tool.wildlint] pedantic=true)",
     )
     parser.add_argument(
         "--select",
@@ -367,7 +367,13 @@ def main(argv: list[str] | None = None) -> int:
         if findings:
             print(f"\n{len(findings)} finding(s).", file=sys.stderr)
 
-    return 1 if (findings or errors) else 0
+    # Exit codes (ruff-compatible): 1 = lint findings present; 2 = errors only
+    # (e.g. an unparseable or missing file) with no findings; 0 = clean. Lets a
+    # CI consumer tell "your code has a real finding" apart from "wildlint hit a
+    # file it couldn't analyse" without parsing stderr.
+    if findings:
+        return 1
+    return 2 if errors else 0
 
 
 if __name__ == "__main__":

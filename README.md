@@ -41,7 +41,9 @@ When walking a directory, common junk (`.venv`, `__pycache__`, `build`, `dist`,
 `.git`, `node_modules`, …) is skipped automatically — pass `--no-default-exclude`
 to scan everything, or `--exclude 'glob/*'` to drop more. Explicit file and
 directory arguments are always scanned as-is. Silence a finding inline with a
-trailing `# noqa` (all codes) or `# noqa: WL001,WL002` (specific).
+trailing `# noqa` (all codes) or `# noqa: WL001,WL002` (specific) — placed on
+the line where the finding is reported (for a multi-line call, the line of the
+flagged expression, not the closing parenthesis, matching flake8/ruff).
 
 Exits non-zero when anything is found **or** a file could not be analysed (a
 syntax error, non-UTF-8, or a missing path); the diagnostic goes to stderr and
@@ -53,7 +55,7 @@ findings stay on stdout, so it drops straight into CI or a pre-commit hook.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/patchwright/wildlint
-    rev: v0.6.0
+    rev: v0.6.1
     hooks:
       - id: wildlint
 ```
@@ -84,7 +86,7 @@ exclude = ["vendor/*"]   # additional path globs to skip
 | WL002 | pedantic | `s.split(' ')` where `s.split()` was meant — keeps empty tokens and skips whitespace collapsing/trimming, leaking blanks downstream. Advisory and opt-in: only an exact single-space literal fires, and it's frequently intentional. | [derek73/python-nameparser#164](https://github.com/derek73/python-nameparser/pull/164) |
 | WL003 | pedantic | `x[-k]` with `k >= 2` — `IndexError` when the sequence is shorter than `k`. Opt-in because deep negative indexing is often provably safe from context the checker can't see. | [savoirfairelinux/num2words#661](https://github.com/savoirfairelinux/num2words/pull/661) |
 | WL004 | default  | An `argparse` option whose `dest` is never read — the flag parses, then silently vanishes. Fires only when *sibling* dests on the same namespace **are** read in the file (so consumption is local and the gap is an oversight). Bails on `vars()`/`getattr`/`**`-splat namespaces and on definitions-only files. | [un33k/python-slugify#180](https://github.com/un33k/python-slugify/pull/180) |
-| WL005 | pedantic | `not A and B or C` — `and` binds tighter than `or`, so the leading `not A and` guards only B, not the trailing `or` branches; meant `not A and (B or C)`. Explicitly parenthesized and-chains (`(not A and B) or C`) are recognized as intentional and suppressed. Opt-in: the compound can be a legitimate condition. | [alexanderlukanin13/coolname#34](https://github.com/alexanderlukanin13/coolname/pull/34) |
+| WL005 | pedantic (advisory) | `not A and B or C` — `and` binds tighter than `or`, so the leading `not A and` guards only B, not the trailing `or` branches. **Advisory**: flags precedence ambiguity for review (most hits are legitimate conditions, not bugs); write `not A and (B or C)` if the guard should cover all branches. Explicitly parenthesized and-chains are recognized and suppressed. | [alexanderlukanin13/coolname#34](https://github.com/alexanderlukanin13/coolname/pull/34) |
 
 The **default** tier is WL001 and WL004 — both have effectively zero false
 positives. WL002, WL003, and WL005 are opt-in via `--pedantic`: real bug classes,

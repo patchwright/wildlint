@@ -80,7 +80,7 @@ def test_syntax_error_to_stderr_and_nonzero(tmp_path, capsys):
     f = tmp_path / "bad.py"
     f.write_text("def (\n")
     rc, out, err = _run([str(f)], capsys)
-    assert rc == 1
+    assert rc == 2  # errors-only (no findings) -> exit 2, not 1
     assert out == ""  # findings stay on stdout; nothing to find
     assert "SyntaxError" in err
     assert str(f) in err
@@ -89,7 +89,7 @@ def test_syntax_error_to_stderr_and_nonzero(tmp_path, capsys):
 def test_missing_path_to_stderr_and_nonzero(tmp_path, capsys):
     missing = tmp_path / "nope.py"
     rc, out, err = _run([str(missing)], capsys)
-    assert rc == 1
+    assert rc == 2  # errors-only (no findings) -> exit 2
     assert "no such file" in err
     assert str(missing) in err
 
@@ -199,6 +199,28 @@ def test_cli_select_overrides_config(tmp_path, monkeypatch, capsys):
     rc, out, _ = _run(["--select", "WL001", str(f)], capsys)
     assert "WL001" in out
     assert "WL002" not in out  # CLI --select won
+
+
+def test_no_pedantic_overrides_config(tmp_path, monkeypatch, capsys):
+    # [tool.wildlint] pedantic=true, but --no-pedantic forces default-tier only.
+    (tmp_path / "pyproject.toml").write_text("[tool.wildlint]\npedantic = true\n")
+    f = tmp_path / "f.py"
+    f.write_text("y = name.split(' ')\n")  # WL002, pedantic-only
+    monkeypatch.chdir(tmp_path)
+    rc, out, _ = _run(["--no-pedantic", str(f)], capsys)
+    assert "WL002" not in out  # --no-pedantic overrode the config
+    assert rc == 0
+
+
+def test_findings_present_exit_1_even_with_errors(tmp_path, capsys):
+    # A real finding alongside an error -> exit 1 (findings win), so CI reads
+    # "you have a finding" distinctly from "wildlint hit a file it couldn't parse."
+    (tmp_path / "good.py").write_text(_WL001)
+    missing = tmp_path / "missing.py"
+    rc, out, err = _run([str(tmp_path / "good.py"), str(missing)], capsys)
+    assert rc == 1
+    assert "WL001" in out
+    assert "no such file" in err
 
 
 # --------------------------------------------------------------------------- #

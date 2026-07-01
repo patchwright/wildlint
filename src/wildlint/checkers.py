@@ -138,7 +138,8 @@ def _argparse_dest(call: ast.Call) -> tuple[str, str] | None:
 
 # --------------------------------------------------------------------------- #
 # WL001 — replace-to-empty used as a prefix/suffix strip
-# Origin: nephila/giturlparse PR #149
+# Origin: nephila/giturlparse PR #149 (superseded by merged #152)
+# Provenance: fix merged in #152 (cf249252ed5); bug = .replace(group, "") as a strip.
 # --------------------------------------------------------------------------- #
 class ReplaceToEmptyPrefix:
     """``x.replace(P, "")`` guarded by ``x.startswith(P)`` / ``x.endswith(P)``.
@@ -218,6 +219,7 @@ class ReplaceToEmptyPrefix:
 # --------------------------------------------------------------------------- #
 # WL002 — str.split(' ') instead of str.split()
 # Origin: derek73/python-nameparser PR #164
+# Provenance: fix merged in #164 (5c1954718cd); bug = .split(' ').
 # --------------------------------------------------------------------------- #
 class SplitSingleSpace:
     """``s.split(' ')`` where ``s.split()`` was almost certainly meant.
@@ -265,6 +267,7 @@ class SplitSingleSpace:
 # --------------------------------------------------------------------------- #
 # WL003 — deep negative index without a length guard  (PEDANTIC)
 # Origin: savoirfairelinux/num2words PR #661
+# Provenance: PR #661 open; bug on master (07814cb11415) = ordinal [-2] IndexError.
 # --------------------------------------------------------------------------- #
 class NegativeIndexNoGuard:
     """``x[-k]`` with ``k >= 2`` — IndexError if the sequence is shorter than k.
@@ -309,7 +312,8 @@ class NegativeIndexNoGuard:
 
 # --------------------------------------------------------------------------- #
 # WL004 — argparse option defined but never wired (its dest is never read)
-# Origin: un33k/python-slugify PR #180
+# Origin: un33k/python-slugify PR #180 (closed as duplicate of #176)
+# Provenance: bug on master (7b6d5d96c19) = regex_pattern dest dropped by slugify_params(); fix PR #176 open.
 # --------------------------------------------------------------------------- #
 class ArgparseDeadDest:
     """An ``add_argument`` whose ``dest`` is never read — the flag is dropped.
@@ -456,18 +460,24 @@ class ArgparseDeadDest:
 # --------------------------------------------------------------------------- #
 # WL005 — `not A and B or C` precedence (and binds tighter than or)
 # Origin: alexanderlukanin13/coolname PR #34
+# Provenance: PR #34 open; bug on master (7f895eed330e) = __nocheck precedence let _check_not_hanging run.
 # --------------------------------------------------------------------------- #
 class NotAndInOr:
-    """``not A and B or C`` -- ``and`` binds tighter than ``or``, so the leading
-    ``not A and`` guards only ``B``, not the trailing ``or`` branches. The author
-    almost always meant ``not A and (B or C)``. In coolname #34 this ran
-    ``_check_not_hanging()`` even with ``__nocheck`` set, because the
-    ``or check_prefix or max_slug_length`` branches escaped the guard.
+    """Advisory: ``not A and B or C`` -- ``and`` binds tighter than ``or``, so
+    the leading ``not A and`` guards only ``B``, not the trailing ``or``
+    branches.
+
+    Flags *precedence ambiguity* for human review, not a definite bug: Python
+    parses the form as ``(not A and B) or C``, and the author either meant
+    ``not A and (B or C)`` or has already disambiguated with parens (which this
+    rule recognizes and suppresses). In coolname #34 the ambiguity bit for real:
+    ``__nocheck`` failed to suppress ``_check_not_hanging()`` because the
+    ``or check_prefix or max_slug_length`` branches escaped the guard. Most
+    real-world hits are legitimate conditions worth a glance, not defects --
+    hence pedantic and opt-in.
 
     Narrow: fires only when an ``and``-chain containing a ``not`` is a direct
-    operand of an ``or``-chain (the ``or``-context is the missing-parens signal;
-    bare ``not A and B`` is too often intentional). Pedantic: the compound can
-    be legitimate, so opt-in.
+    operand of an ``or``-chain and is not wrapped in disambiguating parens.
     """
 
     code = "WL005"
