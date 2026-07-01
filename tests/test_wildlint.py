@@ -56,6 +56,43 @@ def test_wl001_silent_without_guard():
     assert "WL001" not in _codes("def f(p):\n    return p.replace('/x/', '')\n")
 
 
+def test_wl001_silent_on_replace_in_else_branch():
+    # The else branch (node.orelse) runs when the guard is *false*, so the
+    # .replace there is not a guarded strip -- flagging it was a false positive.
+    src = (
+        "def f(p):\n"
+        "    if p.startswith('/x/'):\n"
+        "        return p\n"
+        "    else:\n"
+        "        return p.replace('/x/', '')\n"
+    )
+    assert "WL001" not in _codes(src)
+
+
+def test_wl001_silent_on_replace_in_elif_branch():
+    # elif is node.orelse; reached only when the startswith guard is false.
+    src = (
+        "def f(p):\n"
+        "    if p.startswith('/x/'):\n"
+        "        return p\n"
+        "    elif p.startswith('/y/'):\n"
+        "        return p.replace('/x/', '')\n"
+    )
+    assert "WL001" not in _codes(src)
+
+
+def test_wl001_still_fires_on_replace_nested_in_body():
+    # Nested control flow *inside* the guarded body is still reached under the
+    # guard, so a matching .replace there must still fire.
+    src = (
+        "def f(p):\n"
+        "    if p.startswith('/x/'):\n"
+        "        for _ in range(3):\n"
+        "            p.replace('/x/', '')\n"
+    )
+    assert _codes(src) == ["WL001"]
+
+
 # --------------------------------------------------------------------------- #
 # WL002 — split single space (nameparser #164)
 # --------------------------------------------------------------------------- #

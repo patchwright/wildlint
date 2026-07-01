@@ -145,22 +145,29 @@ class ReplaceToEmptyPrefix:
             if guard is None:
                 continue
             receiver_src, literal, suggestion = guard
-            for inner in ast.walk(node):
-                if isinstance(inner, ast.Call) and self._is_replace_to_empty(
-                    inner, receiver_src, literal
-                ):
-                    out.append(
-                        Finding(
-                            path,
-                            inner.lineno,
-                            inner.col_offset,
-                            self.code,
-                            f'.replace({literal!r}, "") guarded by '
-                            f"{'startswith' if suggestion == 'removeprefix' else 'endswith'}"
-                            f"({literal!r}) removes every occurrence; "
-                            f"use str.{suggestion}({literal!r})",
+            # Only ``node.body`` runs while the guard holds. An ``elif``/``else``
+            # branch (``node.orelse``) runs when the guard is *false*, so a
+            # ``.replace`` there is not the "guarded strip that drops every
+            # occurrence" this rule targets -- flagging it was a false positive.
+            # Walk the body subtree only; nested control flow inside the body is
+            # still reached under the guard.
+            for stmt in node.body:
+                for inner in ast.walk(stmt):
+                    if isinstance(inner, ast.Call) and self._is_replace_to_empty(
+                        inner, receiver_src, literal
+                    ):
+                        out.append(
+                            Finding(
+                                path,
+                                inner.lineno,
+                                inner.col_offset,
+                                self.code,
+                                f'.replace({literal!r}, "") guarded by '
+                                f"{'startswith' if suggestion == 'removeprefix' else 'endswith'}"
+                                f"({literal!r}) removes every occurrence; "
+                                f"use str.{suggestion}({literal!r})",
+                            )
                         )
-                    )
         return out
 
 
