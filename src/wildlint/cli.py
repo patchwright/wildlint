@@ -349,15 +349,15 @@ def main(argv: list[str] | None = None) -> int:
         # exit 0, and CI goes green with zero signal. Warn naming the unknowns;
         # exit 2 only when NOTHING valid would run (partial-unknown still runs
         # the valid subset at the normal exit code).
-        known = {c.code for c in CHECKERS}
-        unknown = codes - known
+        known_codes = {c.code for c in CHECKERS}
+        unknown = codes - known_codes
         if unknown:
             print(
                 f"wildlint: unknown --select code(s): {sorted(unknown)}; "
-                f"known: {sorted(known)}",
+                f"known: {sorted(known_codes)}",
                 file=sys.stderr,
             )
-            if not (codes & known):
+            if not (codes & known_codes):
                 return 2
     extra_excludes: list[str] = []
     if isinstance(config.get("exclude"), list):

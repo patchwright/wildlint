@@ -66,7 +66,7 @@ findings stay on stdout, so it drops straight into CI or a pre-commit hook.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/patchwright/wildlint
-    rev: v0.8.1
+    rev: v0.8.2
     hooks:
       - id: wildlint
 ```

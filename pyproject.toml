@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wildlint"
-version = "0.8.1"
+version = "0.8.2"
 description = "Catch the bugs off-the-shelf linters miss — dead argparse flags, str.replace-as-strip (removeprefix/removesuffix mixups), deep negative indexing, rounding rollover in number/byte humanizers. Each rule distilled from a real upstream fix."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -35,3 +35,18 @@ wildlint = "wildlint:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+wildlint = ["py.typed"]
+
+[tool.mypy]
+# Default mypy (not --strict): catches the class of "plausible-looking but
+# subtly wrong" type errors (CHECKERS typing, name collisions across branches)
+# without the noise of strict on a codebase that pre-dates the checker. The
+# Checker Protocol types CHECKERS so .code/.tier/.name access is visible.
+
+[[tool.mypy.overrides]]
+# tomli is a Python <3.11 backport, imported only in a fallback branch; the
+# type-check runs on 3.13 where tomllib (stdlib) is used instead.
+module = "tomli"
+ignore_missing_imports = true

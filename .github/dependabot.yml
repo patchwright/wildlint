@@ -1,0 +1,19 @@
+version: 2
+# Automated pin-staleness nudges. The project's reproducibility depends on pinned
+# versions (ruff, @ast-grep/cli, GitHub Actions); without this they go stale
+# silently. NOTE: Dependabot covers the github-actions + pip ecosystems only --
+# the pinned corpus repo TAGS in scripts/astgrep_corpus_diff.py are NOT a package
+# ecosystem and stay manual (documented in those scripts).
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
