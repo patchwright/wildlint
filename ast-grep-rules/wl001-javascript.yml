@@ -1,33 +1,32 @@
 # WL001 — replace-to-empty used as a prefix/suffix strip (JavaScript, .js)
 # Real-bug origin (cross-language analogue): nephila/giturlparse #149 (Python),
-# cf249252. Note the TS/JS nuance:
-#   - String.prototype.replace(marker, "") replaces ONLY the FIRST occurrence
-#     (silent prefix-strip — bug class is "you meant replaceAll and got one").
-#   - String.prototype.replaceAll(marker, "") removes EVERY occurrence
-#     (the full giturlparse shape — strips all, corrupting repeated markers).
-# Both forms under a startsWith/endsWith guard are suspicious. The idiomatic
-# strip is `s.startsWith(P) ? s.slice(P.length) : s` (prefix) / slice for suffix,
-# or a small helper; there is no built-in removeprefix in JS.
+# cf249252. JS nuance (load-bearing — this is the whole reason the rule changed):
+#   - String.prototype.replace(marker, "") with a STRING argument replaces ONLY
+#     the FIRST occurrence. That is the CORRECT, idiomatic prefix strip in JS
+#     (there is no removeprefix) — NOT a bug. NOT flagged.
+#   - String.prototype.replaceAll(marker, "") removes EVERY occurrence — the full
+#     giturlparse shape (strips all, corrupting repeated markers). THIS is flagged.
+#   - .replace(/regex/, "") is regex-driven, out of scope (not a literal marker).
 #
-# Reviewer step: confirm the call is inside a startsWith/endsWith guard on the
-# same receiver. ast-grep flags the call site; it does not prove the guard.
+# Tier note: PEDANTIC (candidate-only). This ast-grep rule fires on the call site
+# only; it does NOT prove an enclosing startsWith/endsWith guard. Review each hit.
 #
 # ast-grep note: language: JavaScript only matches .js files. TypeScript (.ts)
-# needs a separate rule with language: TypeScript — see wl001-typescript.yml.
+# needs wl001-typescript.yml.
 id: wl001-javascript-replace-as-strip
 language: JavaScript   # matches .js; .ts needs wl001-typescript.yml
 rule:
-  any:
-    - pattern: $RECV.replace($LIT, "")
-    - pattern: $RECV.replaceAll($LIT, "")
+  pattern: $RECV.replaceAll($LIT, "")
 message: |
-  WL001: $RECV.replace[All](marker, "") guarded by startsWith/endsWith(marker)
-  is a prefix/suffix strip done wrong (.replace drops only the first match;
-  .replaceAll drops every occurrence). Use an explicit slice-based strip.
+  WL001 (candidate): $RECV.replaceAll(marker, "") removes EVERY occurrence of the
+  marker (JS replaceAll is global). If this is a prefix or suffix strip, use a
+  slice: s.startsWith(P) ? s.slice(P.length) : s. Note .replace(marker, "") is
+  first-only and is the CORRECT strip — not flagged. ast-grep flags the call site
+  only — it does NOT prove a startsWith/endsWith guard; review before acting.
   (JS analogue of giturlparse #149, cf249252.)
 severity: warning
 metadata:
   code: WL001
-  tier: default
+  tier: pedantic
   origin: nephila/giturlparse#149
   cross_language: JavaScript

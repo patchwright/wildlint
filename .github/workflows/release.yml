@@ -27,8 +27,28 @@ jobs:
       - name: corpus_diff (finding counts vs baseline)
         run: uv run --python 3.13 python scripts/corpus_diff.py
 
+  ast-grep-corpus:
+    # The ast-grep analogue of the `corpus` job above. The 0.7.0 pack shipped two
+    # language-semantics bugs (JS .replace vs .replaceAll; Go strings.Replace
+    # n==1) that the Python-only corpus gate could not catch: the pack had no
+    # adversarial pressure against real non-Python code. This clones a pinned
+    # real repo per language, runs `sg scan`, and fails on count drift vs
+    # scripts/astgrep_corpus_baseline.json -- so a rule edit that re-introduces a
+    # false-positive explosion (e.g. re-adding the JS .replace arm -> lodash 0->6)
+    # blocks the tag before PyPI. Fails closed. See scripts/astgrep_corpus_diff.py.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install ast-grep
+        run: npm install -g @ast-grep/cli@0.44.0
+      - name: ast-grep corpus_diff (finding counts vs baseline)
+        run: SG_BIN=sg python3 scripts/astgrep_corpus_diff.py
+
   build-and-publish:
-    needs: corpus  # a tag physically cannot publish unless the corpus gate passed
+    needs: [corpus, ast-grep-corpus]  # a tag needs BOTH gates to publish
     runs-on: ubuntu-latest
     permissions:
       id-token: write  # required for trusted publishing
