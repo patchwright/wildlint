@@ -37,12 +37,13 @@ SG = os.environ.get("SG_BIN", "sg")
 # language so every rule family faces real-code pressure. A ref that moves would
 # drift counts and mask a real rule change, so prefer immutable tags.
 CORPUS = {
-    "expressjs/express": "4.19.2",      # JavaScript
-    "lodash/lodash": "4.17.21",         # JavaScript
-    "date-fns/date-fns": "v3.6.0",      # TypeScript
-    "gin-gonic/gin": "v1.10.0",         # Go
-    "spf13/cobra": "v1.8.1",            # Go
-    "serde-rs/json": "v1.0.128",        # Rust
+    "expressjs/express": "4.19.2",  # JavaScript
+    "lodash/lodash": "4.17.21",  # JavaScript
+    "date-fns/date-fns": "v3.6.0",  # TypeScript
+    "gin-gonic/gin": "v1.10.0",  # Go
+    "spf13/cobra": "v1.8.1",  # Go
+    "serde-rs/json": "v1.0.128",  # Rust
+    "pallets/jinja": "3.1.6",  # Python (wl001/002/005-python pressure)
 }
 
 
@@ -50,17 +51,24 @@ def _run(argv: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(argv, capture_output=True, text=True, **kw)
 
 
-def _counts_for(path: Path) -> dict[str, int]:
-    """sg scan the cloned repo, count findings per ruleId. Returns {} on error."""
+def _counts_for(path: Path) -> dict[str, int] | None:
+    """sg scan the cloned repo, count findings per ruleId.
+
+    Returns {} for a genuine empty repo; None on sg/parse error so the caller
+    can fail closed instead of silently recording an empty baseline (which would
+    mask all future drift).
+    """
     r = _run([SG, "scan", "-c", str(SGCONFIG), "--json", str(path)])
     if r.returncode != 0:
-        print(f"  ! sg scan failed for {path.name}: {r.stderr[:200]!r}", file=sys.stderr)
-        return {}
+        print(
+            f"  ! sg scan failed for {path.name}: {r.stderr[:200]!r}", file=sys.stderr
+        )
+        return None
     try:
         hits = json.loads(r.stdout)
     except json.JSONDecodeError:
         print(f"  ! no JSON for {path.name}: {r.stdout[:200]!r}", file=sys.stderr)
-        return {}
+        return None
     counts: dict[str, int] = {}
     for h in hits:
         rid = h.get("ruleId", "?")
@@ -80,9 +88,20 @@ def main() -> int:
             print(f"  clone {owner_repo}@{ref} …", file=sys.stderr)
             c = _run(["git", "clone", "--depth", "1", "--branch", ref, url, str(dest)])
             if c.returncode != 0:
-                print(f"  ! clone failed for {owner_repo}@{ref}:\n{c.stderr}", file=sys.stderr)
+                print(
+                    f"  ! clone failed for {owner_repo}@{ref}:\n{c.stderr}",
+                    file=sys.stderr,
+                )
                 return 3
-            live[owner_repo] = _counts_for(dest)
+            counts = _counts_for(dest)
+            if counts is None:
+                print(
+                    f"  ! refusing to pass: sg scan errored for {owner_repo}@{ref} "
+                    "(error is indistinguishable from 0 findings -- fail closed)",
+                    file=sys.stderr,
+                )
+                return 3
+            live[owner_repo] = counts
 
     if update:
         data = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
@@ -97,8 +116,18 @@ def main() -> int:
 
     expected = json.loads(BASELINE.read_text())["counts"]
     drift = []
-    all_rules = sorted({r for repo in (live | expected) for r in live.get(repo, {}) | expected.get(repo, {})})
-    print(f"{'repo':<22} " + " ".join(f"{r[:14]:>14}" for r in all_rules) + "   (base -> live)")
+    all_rules = sorted(
+        {
+            r
+            for repo in (live | expected)
+            for r in live.get(repo, {}) | expected.get(repo, {})
+        }
+    )
+    print(
+        f"{'repo':<22} "
+        + " ".join(f"{r[:14]:>14}" for r in all_rules)
+        + "   (base -> live)"
+    )
     for repo in expected:
         cells = []
         for r in all_rules:

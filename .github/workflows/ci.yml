@@ -48,8 +48,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Install ast-grep
         run: npm install -g @ast-grep/cli@0.44.0
       - name: sg test
         run: sg test
+      - name: ast-grep corpus_diff (real-code count drift)
+        # Run on pushes and on PRs that touch the pack/config (not pure-Python
+        # PRs -- they neither pay the ~90s clone cost nor get blocked by an
+        # unrelated upstream-clone network flake). Closes the 0.7.0 trap at PR
+        # time: a rule edit with hand-updated snapshots that drifts real counts
+        # fails here before merge. 'stgrep' matches ast-grep-rules/tests and
+        # scripts/astgrep_*; 'sgconfig' covers sgconfig.yml.
+        if: ${{ github.event_name != 'pull_request' || contains(toJSON(github.event.pull_request.files.*.path), 'stgrep') || contains(toJSON(github.event.pull_request.files.*.path), 'sgconfig') }}
+        run: SG_BIN=sg python3 scripts/astgrep_corpus_diff.py

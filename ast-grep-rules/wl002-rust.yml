@@ -5,10 +5,17 @@
 # split_whitespace() collapses runs and ignores leading/trailing whitespace —
 # the exact behavioral gap the Python rule warns about. Only an EXACT single
 # space literal fires.
+# ast-grep note: Rust str::split takes a Pattern, so ' ' (char_literal) and " "
+# (string_literal) are distinct tree-sitter-rust node kinds -- ast-grep does not
+# normalize between them. The char form `.split(' ')` is the one clippy enforces
+# (clippy::single_char_add_str), so it dominates clippy-clean Rust and must be
+# its own arm. Same bug class as the 0.7.0 WL001 JS .replace/.replaceAll split.
 id: wl002-rust-split-single-space
 language: Rust
 rule:
-  pattern: $RECV.split(" ")
+  any:
+    - pattern: $RECV.split(' ')
+    - pattern: $RECV.split(" ")
 message: |
   WL002: .split(' ') keeps empty tokens and will not collapse or trim
   whitespace; use .split_whitespace() (or .split_ascii_whitespace()) unless

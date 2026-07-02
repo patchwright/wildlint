@@ -55,15 +55,16 @@ def _run(argv: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(argv, capture_output=True, text=True, **kw)
 
 
-def _fingerprints(clone_root: Path, repo_name: str) -> list[str]:
+def _fingerprints(clone_root: Path, repo_name: str) -> list[str] | None:
+    """Returns sorted fingerprints, [] for a genuine-empty repo, None on error."""
     r = _run([SG, "scan", "-c", str(SGCONFIG), "--json", str(clone_root)])
     if r.returncode != 0:
         print(f"  ! sg failed for {repo_name}: {r.stderr[:160]!r}", file=sys.stderr)
-        return []
+        return None
     try:
         hits = json.loads(r.stdout)
     except json.JSONDecodeError:
-        return []
+        return None
     fps: set[str] = set()
     for h in hits:
         f = h.get("file", "")
@@ -79,19 +80,35 @@ def _fingerprints(clone_root: Path, repo_name: str) -> list[str]:
 def main() -> int:
     accept = "--accept" in sys.argv
     live: dict[str, list[str]] = {}
+    errored: list[str] = []
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         for spec in WATCH:
             dest = td / spec.replace("/", "__")
             print(f"  clone {spec} (HEAD) …", file=sys.stderr)
-            c = _run(["git", "clone", "--depth", "1", f"https://github.com/{spec}.git", str(dest)])
+            c = _run(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    f"https://github.com/{spec}.git",
+                    str(dest),
+                ]
+            )
             if c.returncode != 0:
                 print(f"  ! clone failed {spec}:\n{c.stderr[:200]}", file=sys.stderr)
                 continue
-            live[spec] = _fingerprints(dest, spec)
+            fps = _fingerprints(dest, spec)
+            if fps is None:
+                errored.append(spec)
+                continue
+            live[spec] = fps
 
     accepted = (
-        json.loads(BASELINE.read_text()).get("fingerprints", {}) if BASELINE.exists() else {}
+        json.loads(BASELINE.read_text()).get("fingerprints", {})
+        if BASELINE.exists()
+        else {}
     )
     new: dict[str, list[str]] = {}
     for repo, fps in live.items():
@@ -101,6 +118,16 @@ def main() -> int:
             new[repo] = delta
 
     if accept:
+        if errored:
+            # Refuse to reseed: writing `live` now would silently drop the
+            # errored repos' accepted fingerprints, masking all their future
+            # drift. The more dangerous half of the error-vs-empty gap.
+            print(
+                f"  ! refusing --accept: sg scan errored for {errored}; re-seeding "
+                "now would drop those repos' accepted findings. Fix the scan and rerun.",
+                file=sys.stderr,
+            )
+            return 3
         BASELINE.write_text(
             json.dumps(
                 {

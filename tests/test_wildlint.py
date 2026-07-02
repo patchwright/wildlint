@@ -545,3 +545,102 @@ def test_wl001_still_fires_on_replace_in_nested_default_arg():
         "            return q\n"
     )
     assert "WL001" in _codes(src)
+
+
+# --------------------------------------------------------------------------- #
+# WL001 precision invariants that were untested (mutation-tested to bite):
+# the receiver-must-match check, and that `if not X.startswith(...)` is NOT
+# treated as a guard (the replace there runs when the prefix does NOT match).
+# --------------------------------------------------------------------------- #
+def test_wl001_silent_when_replace_receiver_differs_from_guard():
+    # Guard on `a`, replace on `b` -- different receiver, must not fire. Only a
+    # test using a DIFFERENT receiver reaches the ast.unparse==receiver_src check
+    # (the literals-differ test bails earlier on the literal mismatch).
+    src = (
+        "def f(a, b):\n"
+        "    if a.startswith('/x/'):\n"
+        "        return b.replace('/x/', '')\n"
+    )
+    assert "WL001" not in _codes(src)
+
+
+def test_wl001_silent_when_guard_negated():
+    # `if not p.startswith(...)` -- the body runs when the prefix does NOT match,
+    # so flagging the .replace would be a false positive. Pins that _guard does
+    # not unwrap `not` (the If test is a UnaryOp, not a Call).
+    src = "def f(p):\n    if not p.startswith('/x/'):\n        p.replace('/x/', '')\n"
+    assert "WL001" not in _codes(src)
+
+
+# --------------------------------------------------------------------------- #
+# WL004 argparse.Namespace-annotation detection (was 0% coverage) and the
+# dynamic-access bail list (vars/getattr tested; setattr/hasattr/__dict__ not).
+# --------------------------------------------------------------------------- #
+def test_wl004_fires_with_namespace_annotated_param():
+    # parse_args in build(); a separate consume(args: argparse.Namespace) reads
+    # args.text but drops --regex-pattern -> WL004 fires via the annotation path.
+    src = (
+        "import argparse\n"
+        "def build():\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    return p.parse_args()\n"
+        "def consume(args: argparse.Namespace):\n"
+        "    return args.text\n"
+    )
+    assert "WL004" in _codes(src)
+
+
+def test_wl004_silent_when_namespace_param_reads_all_dests():
+    src = (
+        "import argparse\n"
+        "def build():\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    return p.parse_args()\n"
+        "def consume(args: argparse.Namespace):\n"
+        "    return args.text + args.regex_pattern\n"
+    )
+    assert "WL004" not in _codes(src)
+
+
+def test_wl004_silent_with_setattr_namespace():
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    args = p.parse_args(argv)\n"
+        "    setattr(args, 'regex_pattern', None)\n"
+        "    return args.text\n"
+    )
+    assert "WL004" not in _codes(src)
+
+
+def test_wl004_silent_with_hasattr_namespace():
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    args = p.parse_args(argv)\n"
+        "    return (args.text, hasattr(args, 'regex_pattern'))\n"
+    )
+    assert "WL004" not in _codes(src)
+
+
+def test_wl004_silent_with_dict_access_namespace():
+    src = (
+        "import argparse\n"
+        "def run(argv):\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.add_argument('--text')\n"
+        "    p.add_argument('--regex-pattern')\n"
+        "    args = p.parse_args(argv)\n"
+        "    return (args.text, list(args.__dict__))\n"
+    )
+    assert "WL004" not in _codes(src)

@@ -18,7 +18,7 @@ from .property_templates import (
     get_template,
 )
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 
 __all__ = [
     "CHECKERS",

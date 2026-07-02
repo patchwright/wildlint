@@ -86,11 +86,11 @@ mkdir -p /tmp/wildlint-sg/rules &&
 
 ## Rules
 
-| Code  | Bug class | Python origin (real upstream fix) | Languages here |
-|-------|-----------|-----------------------------------|----------------|
-| WL001 | `replace(marker, "")` guarded by `startswith`/`endswith` strips **every** occurrence, not just the prefix/suffix | nephila/giturlparse #149 (superseded by merged #152, `cf249252`) | Python, Rust, Go, JavaScript, TypeScript |
-| WL002 | `split(' ')` keeps empty tokens and does not collapse/trim whitespace | derek73/python-nameparser #164 (`5c1954718cd`) | Python, Rust, Go, JavaScript, TypeScript |
-| WL005 | `not A and B or C` / `!A && B \|\| C` precedence — `and`/`&&` binds tighter than `or`/`\|\|`, so the leading negation guards only B | alexanderlukanin13/coolname #34 (open; bug on master `7f895eed330e`) | Python, Rust, Go, JavaScript, TypeScript |
+| Code  | Bug class | Python origin (real upstream fix) | Languages | Tier (`metadata.tier` / `guard_proven`) |
+|-------|-----------|-----------------------------------|-----------|------|
+| WL001 | `replace(marker, "")` guarded by `startswith`/`endswith` strips **every** occurrence, not just the prefix/suffix | nephila/giturlparse #149 (superseded by merged #152, `cf249252`) | Python, Rust, Go, JavaScript, TypeScript | **default / guard-proven** for Py/Rust/JS/TS; **pedantic candidate-only** for Go (tree-sitter-go has no `else_clause` node, so the else branch can't be excluded) |
+| WL002 | `split(' ')` keeps empty tokens and does not collapse/trim whitespace | derek73/python-nameparser #164 (`5c1954718cd`) | Python, Rust, Go, JavaScript, TypeScript | pedantic (all languages) |
+| WL005 | `not A and B or C` / `!A && B \|\| C` precedence — `and`/`&&` binds tighter than `or`/`\|\|`, so the leading negation guards only B | alexanderlukanin13/coolname #34 (open; bug on master `7f895eed330e`) | Python, Rust, Go, JavaScript, TypeScript | pedantic / advisory (all languages) |
 
 ### Provenance — what each rule was distilled from
 
@@ -156,18 +156,25 @@ bare form but **not** on `(not a and b) or c` (and the same holds for `&&`/`||`
 in Rust, Go, JS, TS). The ast-grep WL005 rules are therefore *more precise*
 than the Python linter's AST walk and need no token-space suppression.
 
-## What these rules do NOT do (vs. the Python linter)
+## Guard precision vs. the Python linter
 
-- **WL001 does not prove the guard holds.** The Python checker walks the `if`
-  body and confirms the `replace` runs under a `startswith`/`endswith` on the
-  same receiver and literal. ast-grep fires on the bare `replace(marker, "")`
-  call site; reviewers must confirm the surrounding guard. A single ast-grep
-  rule cannot AND a call with an enclosing conditional in one pattern.
-- **WL002/WL005 have the same precision as the Python linter** (WL005 is
-  tighter, per the note above).
+- **WL001 for Python/Rust/JS/TS proves the guard**, the same way the Python
+  checker does: the replace call must sit inside the *consequence* (if-true
+  branch) of an `if` guarded by `startsWith`/`starts_with` (or the `ends…`
+  form) on the SAME receiver and marker literal, with `elif`/`else`/`else-if`
+  branches excluded via `not: { inside: { stopBy: end, kind: else_clause } }`
+  (Python also `elif_clause`). Those four ship at `metadata.tier: default`
+  (`guard_proven: true`) — their hits are confirmed bugs, not candidates.
+- **WL001 for Go is the exception — pedantic candidate-only.** tree-sitter-go
+  has no `else_clause` node (the else body is a bare positional block), so the
+  else branch cannot be structurally excluded and the guard cannot be proven.
+  Treat Go `strings.ReplaceAll` hits as candidates for review against the
+  surrounding `HasPrefix`/`HasSuffix`.
+- **WL002/WL005 are pedantic/advisory in every language** (WL005 is paren-aware
+  and tighter than the Python linter's AST walk, per the note above).
 
-Treat ast-grep hits as **candidates for human review**, not confirmed bugs —
-the same posture as the Python linter's `PEDANTIC` tier.
+So: Python/Rust/JS/TS WL001 hits are confirmed bugs; all WL002, WL005, and Go
+WL001 hits are candidates for human review.
 
 ## Layout
 
@@ -216,4 +223,33 @@ not ast-grep). Confirmed:
   multi-language fixture fires 5 distinct rule ids, one per language.
 
 Reproduce: `npx -y -p @ast-grep/cli sg scan -r wildlint/ast-grep-rules/wl001-python.yml <fixture.py>`.
+
+## Adversarial validation (beyond the fixtures)
+
+The pack has two layers of real-code pressure beyond the hand-written `sg test`
+fixtures, mirroring the Python core's corpus gate. The 0.7.0 pack shipped two
+language-semantics bugs precisely because neither existed yet.
+
+- **`scripts/astgrep_corpus_diff.py`** runs the pack over a pinned multi-language
+  real-world corpus (express, lodash, date-fns, gin, cobra, serde-json, jinja)
+  and diffs finding counts vs `scripts/astgrep_corpus_baseline.json`. It **gates
+  releases** (the `ast-grep-corpus` job in `release.yml`, where
+  `build-and-publish: needs: [corpus, ast-grep-corpus]` blocks PyPI on drift) and
+  runs on PRs that touch the pack (the `ast-grep` job in `ci.yml`). It fails
+  closed: a clone/scan ERROR is distinguished from "0 findings" (returns 3, not a
+  silent empty baseline). Local: `SG_BIN=sg python3 scripts/astgrep_corpus_diff.py`
+  (exit 1 on drift, `--update` to re-cut).
+- **`scripts/astgrep_drift_watch.py`** is a weekly advisory sweep
+  (`.github/workflows/astgrep_drift_watch.yml`, Monday cron) over a broader
+  MOVING-HEAD repo set; it fingerprints findings and opens a tracking issue for
+  any not in the reviewed-accepted baseline (`scripts/astgrep_drift_baseline.json`).
+  It **never blocks a release** — its role is to surface EMERGING real-world
+  signal (the generalize-rule-never-run-it failure that shipped 0.7.0) so it
+  can't recur unnoticed.
+
+The division: `corpus_diff` catches rule REGRESSIONS against FROZEN pinned code
+(pre-merge / pre-release); `drift_watch` catches EMERGING signal against MOVING
+upstream (advisory, weekly). Rust corpus counts are expected-empty (the bug
+shapes are vanishingly rare in idiomatic Rust) — Rust recall is owned by the `sg`
+fixtures, not the corpus gate.
 

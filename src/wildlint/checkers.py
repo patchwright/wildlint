@@ -612,7 +612,12 @@ class NotAndInOr:
         self, tree: ast.AST, path: str, source: str | None = None
     ) -> list[Finding]:
         out: list[Finding] = []
-        tokens = _significant_tokens(source) if source is not None else None
+        # Lazy: tokenizing the whole source is only needed to suppress
+        # PARENTHESIZED and-chains, which exist only when a `not A and B or C`
+        # candidate is present. Most files have no such candidate, so defer the
+        # tokenize until the first hit and memoize across the walk (source=None
+        # keeps tokens None -> suppression skipped -> fires, matching original).
+        tokens: list[tokenize.TokenInfo] | None = None
         for node in ast.walk(tree):
             if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
                 continue
@@ -623,6 +628,8 @@ class NotAndInOr:
                     # the and-chain is wrapped in source, the author
                     # disambiguated and the precedence is no longer ambiguous,
                     # so suppress (see _chain_is_parenthesized).
+                    if tokens is None and source is not None:
+                        tokens = _significant_tokens(source)
                     if tokens is not None and self._chain_is_parenthesized(val, tokens):
                         continue
                     out.append(
