@@ -112,6 +112,25 @@ but they also fire on legitimate code, so the default stays strictly precision.
 Each rule is verified against the *actual pre-fix source* of the project it came
 from — see the tests, and the rule docstrings in `src/wildlint/checkers.py`.
 
+## Multi-language rules (ast-grep)
+
+WL001, WL002, and WL005 are also packaged as [ast-grep](https://ast-grep.github.io/)
+rules — same bug classes ported to **Rust / Go / TypeScript / JavaScript** (plus a
+re-encode of the Python originals), so non-Python repos get them via the `sg` CLI or
+ast-grep's IDE integrations.
+
+```bash
+npm install -g @ast-grep/cli
+sg scan .      # from the repo root — picks up sgconfig.yml
+```
+
+Each rule file carries its own provenance and ast-grep-specific caveats (e.g. WL001
+splits the empty-literal `any:` arm across quote styles, since ast-grep does not
+normalize Python string-literal quotes; WL005's pattern is paren-respecting and does
+*not* fire on `(!A && B) || C`). The pack ships a committed regression suite — `sg
+test` runs 15 valid/invalid case files against committed snapshots, gated in CI
+alongside the Python tests. Details: [`ast-grep-rules/README.md`](ast-grep-rules/README.md).
+
 ## Property-test templates
 
 Some bug classes have no stable AST signature — the same wrong behaviour is
