@@ -1,0 +1,24 @@
+# WL005 — `!A && B || C` precedence (Go)
+# Real-bug origin (cross-language analogue): alexanderlukanin13/coolname #34
+# (Python, 7f895eed330e). Go inherits C-family precedence: && binds tighter than
+# ||, so `!A && B || C` is `(!A && B) || C`. Same trap, same advisory status.
+id: wl005-go-not-and-in-or
+language: Go
+rule:
+  pattern: '!$A && $B || $C'
+message: |
+  WL005 (advisory): `!A && B || C` -- && binds tighter than ||, so the leading
+  `!A &&` guards only B, not the trailing or-branches. If the guard should
+  cover all, write `!A && (B || C)`. (Go analogue of coolname #34,
+  7f895eed330e.) NOTE: validated against ast-grep 0.44.0 — the pattern does NOT
+  fire when the and-chain is wrapped in disambiguating parens
+  (`(!A && B) || C`), so this rule is more precise than the Python linter's
+  AST walk (which needs a token check to suppress that shape).
+severity: warning
+metadata:
+  code: WL005
+  tier: pedantic
+  origin: alexanderlukanin13/coolname#34
+  cross_language: Go
+  advisory: true
+  paren_respecting: true

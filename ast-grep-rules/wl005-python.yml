@@ -1,0 +1,35 @@
+# WL005 — `not A and B or C` precedence (Python)
+# Real-bug origin: alexanderlukanin13/coolname PR #34 (open; bug on master
+# 7f895eed330e). `and` binds tighter than `or`, so `not A and B or C` parses as
+# `(not A and B) or C` — the leading `not A and` guards ONLY B, not the
+# trailing or-branches. In coolname #34 this let _check_not_hanging escape the
+# __nocheck guard. Advisory (most hits are legitimate conditions); review by
+# human. If the author meant `not A and (B or C)`, add the parens.
+#
+# Validated behavior (ast-grep 0.44.0): the pattern `not $A and $B or $C` fires
+# on the bare unparenthesized form but does NOT fire when the and-chain is
+# wrapped in disambiguating parens (`(not a and b) or c`). This is BETTER than
+# the Python linter, which needs a token-space check to suppress the
+# parenthesized form (ast.parse drops grouping parens, so the AST-based linter
+# sees both shapes as identical). ast-grep's structural matcher preserves the
+# distinction. If a future ast-grep version regresses to paren-blindness, the
+# Python linter's token check (checkers.py WL005) remains the source of truth.
+id: wl005-python-not-and-in-or
+language: Python
+rule:
+  pattern: not $A and $B or $C
+message: |
+  WL005 (advisory): `not A and B or C` -- `and` binds tighter than `or`, so the
+  leading `not A and` guards only B, not the trailing or-branches. If the guard
+  should cover all of them, write `not A and (B or C)`. Most hits are
+  legitimate; review. Origin: alexanderlukanin13/coolname #34 (7f895eed330e).
+  NOTE: ast-grep cannot see disambiguating parens (they are absent from the
+  AST), so a deliberately parenthesized `(not A and B) or C` will also match —
+  suppress those on review.
+severity: warning    # pedantic tier; advisory
+metadata:
+  code: WL005
+  tier: pedantic
+  origin: alexanderlukanin13/coolname#34
+  advisory: true
+  paren_blindness: true   # see checkers.py WL005 docstring

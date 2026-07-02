@@ -1,0 +1,20 @@
+# WL002 — strings.Split(s, " ") instead of strings.Fields(s) (Go)
+# Real-bug origin (cross-language analogue): derek73/python-nameparser #164
+# (Python, 5c1954718cd). Go's strings.Split(s, " ") keeps empty tokens and does
+# not collapse runs ("a  b " -> ["a","","b",""]), whereas strings.Fields(s)
+# splits on runs of whitespace and returns no empty fields — the exact gap the
+# Python rule warns about. Only an EXACT single space literal fires.
+id: wl002-go-split-single-space
+language: Go
+rule:
+  pattern: strings.Split($RECV, " ")
+message: |
+  WL002: strings.Split(s, " ") keeps empty tokens and will not collapse or trim
+  whitespace; use strings.Fields(s) unless single-space splitting is genuinely
+  intended. (Go analogue of python-nameparser #164, 5c1954718cd.)
+severity: warning
+metadata:
+  code: WL002
+  tier: pedantic
+  origin: derek73/python-nameparser#164
+  cross_language: Go
