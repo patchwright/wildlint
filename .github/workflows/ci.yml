@@ -37,6 +37,23 @@ jobs:
       - name: ruff format
         run: ruff format --check src tests
 
+  type:
+    # Type-check the (fully-hinted) Python core. The project's identity is "we
+    # verify our own claims"; an unchecked type surface is an odd gap, and mypy
+    # catches the class of "plausible-looking but subtly wrong" that bit the
+    # 0.8.1 corpus-on-PR trigger (a YAML/expression bug, but the same mental-
+    # model-vs-verify discipline). Runs default mypy (not --strict).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: pip install -e . mypy
+      - name: mypy
+        run: mypy src/wildlint
+
   ast-grep:
     # Regression suite for the multi-language ast-grep rule pack
     # (ast-grep-rules/). Mirrors the corpus gate's philosophy: a rule edit that
@@ -53,12 +70,8 @@ jobs:
         run: npm install -g @ast-grep/cli@0.44.0
       - name: sg test
         run: sg test
-      - name: ast-grep corpus_diff (real-code count drift)
-        # Run on pushes and on PRs that touch the pack/config (not pure-Python
-        # PRs -- they neither pay the ~90s clone cost nor get blocked by an
-        # unrelated upstream-clone network flake). Closes the 0.7.0 trap at PR
-        # time: a rule edit with hand-updated snapshots that drifts real counts
-        # fails here before merge. 'stgrep' matches ast-grep-rules/tests and
-        # scripts/astgrep_*; 'sgconfig' covers sgconfig.yml.
-        if: ${{ github.event_name != 'pull_request' || contains(toJSON(github.event.pull_request.files.*.path), 'stgrep') || contains(toJSON(github.event.pull_request.files.*.path), 'sgconfig') }}
-        run: SG_BIN=sg python3 scripts/astgrep_corpus_diff.py
+      # NOTE: the real-code corpus count-drift gate on PRs lives in its own
+      # workflow (astgrep_corpus_pr.yml) using a server-side `on.pull_request.
+      # paths:` filter. A step-level `if:` on github.event.pull_request.files was
+      # tried in 0.8.1 and is BROKEN -- that field is not in the webhook payload,
+      # so the step silently never ran. See astgrep_corpus_pr.yml.

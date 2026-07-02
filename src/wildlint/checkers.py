@@ -19,6 +19,7 @@ import ast
 import tokenize
 from dataclasses import dataclass
 from io import StringIO
+from typing import Protocol
 
 DEFAULT = "default"  # low false-positive; on unless deselected
 PEDANTIC = "pedantic"  # higher false-positive; opt-in via --pedantic
@@ -39,6 +40,24 @@ class Finding:
 
     def __str__(self) -> str:
         return f"{self.path}:{self.line}:{self.col}: {self.code} {self.message}"
+
+
+class Checker(Protocol):
+    """Structural type every WL/WP checker satisfies.
+
+    Each checker is a class with ``code``/``name``/``tier`` attributes and a
+    ``check`` method. Typing ``CHECKERS`` against this Protocol lets mypy see the
+    ``.code``/``.tier``/``.name`` access (the instances are otherwise a union of
+    unrelated classes that collapses to ``object``).
+    """
+
+    code: str
+    name: str
+    tier: str
+
+    def check(
+        self, tree: ast.AST, path: str, source: str | None = ...
+    ) -> list[Finding]: ...
 
 
 def _str_const(node: ast.expr) -> str | None:
@@ -472,10 +491,10 @@ class ArgparseDeadDest:
                 if attr == "parse_known_args":
                     return []  # tuple result — can't track which name is the namespace
                 if attr == "add_argument" and node.args:
-                    dest = _argparse_dest(node)
-                    if dest is not None:
+                    found = _argparse_dest(node)
+                    if found is not None:
                         add_calls.append(
-                            (dest[0], dest[1], node.lineno, node.col_offset)
+                            (found[0], found[1], node.lineno, node.col_offset)
                         )
 
         # Propagate aliases: a name reachable from a known namespace through
@@ -650,7 +669,7 @@ class NotAndInOr:
         return out
 
 
-CHECKERS = [
+CHECKERS: list[Checker] = [
     ReplaceToEmptyPrefix(),
     SplitSingleSpace(),
     NegativeIndexNoGuard(),
@@ -659,7 +678,9 @@ CHECKERS = [
 ]
 
 
-def select_checkers(*, pedantic: bool = False, codes: set[str] | None = None) -> list:
+def select_checkers(
+    *, pedantic: bool = False, codes: set[str] | None = None
+) -> list[Checker]:
     """Return the active checkers.
 
     ``pedantic`` includes the opt-in tier. ``codes`` (e.g. ``{"WL001"}``)

@@ -1,0 +1,42 @@
+name: ast-grep corpus (PR)
+
+# Real-code count-drift pressure on PRs that touch the ast-grep pack -- the PR
+# analogue of the release-gating `ast-grep-corpus` job in release.yml. Closes the
+# 0.7.0 trap (a rule edit + hand-updated snapshots that drifts real counts) at
+# PR time, not just tag time.
+#
+# Uses a server-side `on.pull_request.paths:` filter, which GitHub evaluates
+# BEFORE dispatching the workflow. This is the correct native mechanism: the
+# 0.8.1 attempt used a step-level `if:` on `github.event.pull_request.files.*.path`,
+# but `files` is NOT a field on the pull_request webhook payload (only a
+# `changed_files` count), so that expression silently matched nothing and the
+# step never ran on any PR. `workflow_dispatch` is included so the gate can be
+# triggered manually to prove it runs (not skipped).
+
+on:
+  pull_request:
+    paths:
+      - 'ast-grep-rules/**'
+      - 'ast-grep-tests/**'
+      - 'sgconfig.yml'
+      - 'scripts/astgrep_corpus_diff.py'
+      - 'scripts/astgrep_corpus_baseline.json'
+      - 'scripts/astgrep_drift_watch.py'
+      - 'scripts/astgrep_drift_baseline.json'
+      - '.github/workflows/astgrep_corpus_pr.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ast-grep-corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install ast-grep
+        run: npm install -g @ast-grep/cli@0.44.0
+      - name: ast-grep corpus_diff (finding counts vs baseline)
+        run: SG_BIN=sg python3 scripts/astgrep_corpus_diff.py
