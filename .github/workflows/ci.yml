@@ -36,3 +36,20 @@ jobs:
         run: ruff check src tests
       - name: ruff format
         run: ruff format --check src tests
+
+  ast-grep:
+    # Regression suite for the multi-language ast-grep rule pack
+    # (ast-grep-rules/). Mirrors the corpus gate's philosophy: a rule edit that
+    # silently changes finding behavior fails here, before merge. Committed
+    # snapshots (ast-grep-tests/__snapshots__/) are the stored expected output;
+    # `sg test` re-derives and diffs them. See ast-grep-rules/README.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install ast-grep
+        run: npm install -g @ast-grep/cli@0.44.0
+      - name: sg test
+        run: sg test
