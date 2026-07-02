@@ -30,7 +30,32 @@ a rule" section of the README.
 Tags trigger `release.yml`: the `corpus` and `ast-grep-corpus` gates must pass
 before PyPI trusted publishing. Bump `version` in `pyproject.toml` and
 `__version__` in `src/wildlint/__init__.py` together, and bump the README
-pre-commit `rev:` to match the new tag.
+pre-commit `rev:` to match the new tag. Release artifacts ship with PEP 740
+sigstore attestations automatically (the publish action generates them via
+Trusted Publishing + `id-token: write`; verifiable on the rekor transparency
+log) — no extra setup.
+
+## Verifying CI / GitHub Actions changes
+
+Any new workflow, conditional `if:` expression, or `github.event.*` reference
+must be verified against an **actual triggered run**, not read for plausibility.
+GitHub Actions expressions can reference fields that don't exist in the webhook
+payload — e.g. `github.event.pull_request.files` is NOT a field (only a
+`changed_files` count is), and a 0.8.1 corpus-on-PR step silently never ran
+because of it, reporting as `skipped` with no error. Concretely:
+
+- After adding a conditional step, trigger the workflow (a scratch PR, or
+  `workflow_dispatch`) and check the **step's** conclusion:
+  `gh run view <id> --json jobs --jq '.jobs[].steps[].conclusion'` — confirm
+  `success`, **not** `skipped`. A `success` job containing only `skipped` steps
+  proves nothing.
+- For paths-filtering, prefer a workflow-level `on.pull_request.paths:` filter
+  (GitHub evaluates it server-side before dispatch) over a step `if:` on
+  `github.event.pull_request.files.*`.
+
+This is the CI-layer analogue of the rule-layer discipline (run a rule against
+real OSS code, not just self-authored fixtures): verify the mechanism fires,
+don't trust the mental model.
 
 Be honest about provenance in the README rules table (self-submitted vs
 independently merged upstream).

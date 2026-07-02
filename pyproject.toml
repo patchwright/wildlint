@@ -40,10 +40,10 @@ where = ["src"]
 wildlint = ["py.typed"]
 
 [tool.mypy]
-# Default mypy (not --strict): catches the class of "plausible-looking but
-# subtly wrong" type errors (CHECKERS typing, name collisions across branches)
-# without the noise of strict on a codebase that pre-dates the checker. The
-# Checker Protocol types CHECKERS so .code/.tier/.name access is visible.
+# strict mode: the audit's #2 advice. The Checker Protocol types CHECKERS, and
+# every function is annotated -- strict catches the implicit-Any-through-a-
+# Finding/Checker-boundary class that's most dangerous in this codebase.
+strict = true
 
 [[tool.mypy.overrides]]
 # tomli is a Python <3.11 backport, imported only in a fallback branch; the
