@@ -1,21 +1,12 @@
 id: wl001-go-replace-as-strip
+# Go is PEDANTIC candidate-only (tree-sitter-go has no else_clause node, so the
+# guard can't exclude else branches). These cases assert the candidate behavior:
+# ReplaceAll-to-empty matches (for human review); the safe forms don't.
 invalid:
   - |-
-    func f() {
-        if strings.HasPrefix(s, "/blob/") {
-            s = strings.ReplaceAll(s, "/blob/", "")
-        }
-    }
+    strings.ReplaceAll(path, "/blob/", "")
 valid:
   - |-
-    func f() { s = strings.ReplaceAll(s, "/blob/", "") }
+    strings.Replace(path, "/blob/", "", 1)
   - |-
-    func f() {
-        if strings.HasPrefix(s, "/blob/") {
-            s = strings.ReplaceAll(s, "/x/", "")
-        }
-    }
-  - |-
-    func f() { s = strings.Replace(s, "/blob/", "", 1) }
-  - |-
-    func f() { s = strings.TrimPrefix(s, "/blob/") }
+    strings.TrimPrefix(path, "/blob/")

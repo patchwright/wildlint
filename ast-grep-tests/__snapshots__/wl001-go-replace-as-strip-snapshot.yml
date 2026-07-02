@@ -1,20 +1,8 @@
 id: wl001-go-replace-as-strip
 snapshots:
-  ? |-
-    func f() {
-        if strings.HasPrefix(s, "/blob/") {
-            s = strings.ReplaceAll(s, "/blob/", "")
-        }
-    }
-  : labels:
-    - source: strings.ReplaceAll(s, "/blob/", "")
+  strings.ReplaceAll(path, "/blob/", ""):
+    labels:
+    - source: strings.ReplaceAll(path, "/blob/", "")
       style: primary
-      start: 63
-      end: 98
-    - source: |-
-        if strings.HasPrefix(s, "/blob/") {
-                s = strings.ReplaceAll(s, "/blob/", "")
-            }
-      style: secondary
-      start: 15
-      end: 104
+      start: 0
+      end: 38

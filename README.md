@@ -127,15 +127,18 @@ sg scan .      # from the repo root — picks up sgconfig.yml
 Each rule file carries its own provenance and ast-grep-specific caveats. Two are
 load-bearing and worth stating up front:
 
-- **WL001 is guard-proven default tier, matching the Python CLI.** Each ast-grep
-  WL001 variant matches the replace/replaceAll/ReplaceAll call ONLY when it sits
-  inside an `if` guarded by `startsWith`/`HasPrefix`/`starts_with` (or the
-  `ends…` form) on the SAME receiver and marker literal — the same precision that
-  makes the Python CLI's WL001 effectively zero-false-positive. ast-grep's
-  `inside: { stopBy: end }` relational rule with unified `$RECV`/`$LIT` is what
-  makes this expressible. Compound guards (`if x.startsWith(m) and …:`) fall
-  through to manual review. (In 0.7.0–0.7.1 these rules were unguarded pedantic
-  candidates; the guard check landed in 0.7.2.)
+- **WL001 is guard-proven default tier for Python/Rust/JS/TS, matching the
+  Python CLI.** The replace/replaceAll call matches ONLY when it sits inside the
+  *consequence* (if-true branch) of an `if` guarded by `startsWith`/`starts_with`
+  on the SAME receiver and marker — `elif`/`else`/`else-if` branches are excluded
+  via `not: { inside: else_clause }` (they run when the guard is FALSE; this is
+  the round-1 / 0.7.2 else-branch false positive, now fixed and pinned by
+  permanent test cases). Compound guards fall through to manual review.
+- **Go is the exception — pedantic candidate-only.** tree-sitter-go has no
+  `else_clause` node (the else body is a bare positional block), so the else
+  branch can't be structurally excluded and the guard can't be proven. Rather
+  than ship an unprovable guard at default tier, Go stays candidate-only: review
+  `strings.ReplaceAll(x, m, "")` hits against the surrounding `HasPrefix`.
 - **Language semantics are respected in which call can be the bug.** JS/TS flags
   `.replaceAll(marker, "")` only — `.replace(marker, "")` is first-only and is the
   *correct* prefix strip. Go flags `strings.ReplaceAll` only — `strings.Replace(…,
