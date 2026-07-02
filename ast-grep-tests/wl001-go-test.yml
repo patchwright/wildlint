@@ -1,9 +1,21 @@
 id: wl001-go-replace-as-strip
 invalid:
   - |-
-    strings.ReplaceAll(path, "/blob/", "")
+    func f() {
+        if strings.HasPrefix(s, "/blob/") {
+            s = strings.ReplaceAll(s, "/blob/", "")
+        }
+    }
 valid:
   - |-
-    strings.Replace(path, "/blob/", "", 1)
+    func f() { s = strings.ReplaceAll(s, "/blob/", "") }
   - |-
-    strings.TrimPrefix(path, "/blob/")
+    func f() {
+        if strings.HasPrefix(s, "/blob/") {
+            s = strings.ReplaceAll(s, "/x/", "")
+        }
+    }
+  - |-
+    func f() { s = strings.Replace(s, "/blob/", "", 1) }
+  - |-
+    func f() { s = strings.TrimPrefix(s, "/blob/") }

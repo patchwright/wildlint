@@ -1,9 +1,17 @@
 id: wl001-javascript-replace-as-strip
 invalid:
   - |-
-    path.replaceAll("/blob/", "")
+    if (s.startsWith("/blob/")) {
+        s = s.replaceAll("/blob/", "");
+    }
 valid:
   - |-
-    path.replace("/blob/", "")
+    s = s.replaceAll("/blob/", "");
   - |-
-    path.startsWith("/blob/") ? path.slice(6) : path
+    if (s.startsWith("/blob/")) {
+        s = s.replaceAll("/x/", "");
+    }
+  - |-
+    s = s.replace("/blob/", "");
+  - |-
+    s = s.startsWith("/blob/") ? s.slice(6) : s

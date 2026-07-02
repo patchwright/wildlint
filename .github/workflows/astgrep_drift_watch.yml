@@ -1,0 +1,56 @@
+name: ast-grep drift watch
+
+# Weekly advisory sweep: scan MOVING upstream HEAD with the current ast-grep pack
+# and open a tracking issue for any finding not in the reviewed-accepted baseline
+# (scripts/astgrep_drift_baseline.json). Distinct from the release-gating corpus
+# job: this catches EMERGING real-world signal (a rule matching new patterns in
+# upstream OSS) so the "generalize a rule, never run it against real code"
+# failure mode that shipped 0.7.0 can't recur unnoticed. Never blocks a release.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"   # weekly, Monday ~06:17 UTC (off the :00 fleet)
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install ast-grep
+        run: npm install -g @ast-grep/cli@0.44.0
+      - name: Drift watch
+        id: watch
+        run: |
+          set +e
+          SG_BIN=sg python3 scripts/astgrep_drift_watch.py > /tmp/new.txt 2>/tmp/err.txt
+          rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          echo "### drift-watch stderr" >> "$GITHUB_STEP_SUMMARY" || true
+          tail -5 /tmp/err.txt >> "$GITHUB_STEP_SUMMARY" || true
+          if [ "$rc" -eq 1 ]; then
+            {
+              echo "## New ast-grep findings vs accepted baseline"
+              echo
+              cat /tmp/new.txt
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Open issue on new findings
+        if: steps.watch.outputs.rc == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          # try with a label first, fall back label-less if the label is absent
+          gh issue create --repo patchwright/wildlint \
+            --title "ast-grep drift watch: new findings $DATE" \
+            --body-file /tmp/new.txt --label drift-watch 2>/dev/null || \
+          gh issue create --repo patchwright/wildlint \
+            --title "ast-grep drift watch: new findings $DATE" \
+            --body-file /tmp/new.txt

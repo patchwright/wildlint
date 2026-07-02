@@ -1,32 +1,39 @@
-# WL001 — replace-to-empty used as a prefix/suffix strip (JavaScript, .js)
+# WL001 — guarded replaceAll-to-empty as prefix/suffix strip (JavaScript, .js)
 # Real-bug origin (cross-language analogue): nephila/giturlparse #149 (Python),
-# cf249252. JS nuance (load-bearing — this is the whole reason the rule changed):
+# cf249252. JS nuance (load-bearing):
 #   - String.prototype.replace(marker, "") with a STRING argument replaces ONLY
-#     the FIRST occurrence. That is the CORRECT, idiomatic prefix strip in JS
-#     (there is no removeprefix) — NOT a bug. NOT flagged.
+#     the FIRST occurrence — that is the CORRECT prefix strip in JS (no
+#     removeprefix). NOT a bug. NOT flagged.
 #   - String.prototype.replaceAll(marker, "") removes EVERY occurrence — the full
-#     giturlparse shape (strips all, corrupting repeated markers). THIS is flagged.
+#     giturlparse shape. Flagged, but only when guarded (see below).
 #   - .replace(/regex/, "") is regex-driven, out of scope (not a literal marker).
 #
-# Tier note: PEDANTIC (candidate-only). This ast-grep rule fires on the call site
-# only; it does NOT prove an enclosing startsWith/endsWith guard. Review each hit.
+# Guard-proven default tier: matches replaceAll only inside an if guarded by
+# startsWith/endsWith on the same receiver + marker. Compound guards fall through
+# to manual review.
 #
-# ast-grep note: language: JavaScript only matches .js files. TypeScript (.ts)
-# needs wl001-typescript.yml.
+# ast-grep mechanics: `inside` with `stopBy: end`. The JS if-pattern must be
+# BRACELESS (`if ($COND) $$$BODY`) — the braced form `if ($COND) { $$$BODY }`
+# fails to match under `inside: stopBy: end` even though it matches standalone.
+# language: JavaScript matches .js only; .ts needs wl001-typescript.yml.
 id: wl001-javascript-replace-as-strip
 language: JavaScript   # matches .js; .ts needs wl001-typescript.yml
 rule:
   pattern: $RECV.replaceAll($LIT, "")
+  inside:
+    stopBy: end
+    any:
+      - pattern: 'if ($RECV.startsWith($LIT)) $$$BODY'
+      - pattern: 'if ($RECV.endsWith($LIT)) $$$BODY'
 message: |
-  WL001 (candidate): $RECV.replaceAll(marker, "") removes EVERY occurrence of the
-  marker (JS replaceAll is global). If this is a prefix or suffix strip, use a
-  slice: s.startsWith(P) ? s.slice(P.length) : s. Note .replace(marker, "") is
-  first-only and is the CORRECT strip — not flagged. ast-grep flags the call site
-  only — it does NOT prove a startsWith/endsWith guard; review before acting.
-  (JS analogue of giturlparse #149, cf249252.)
+  WL001: $RECV.replaceAll(marker, "") inside `if ($RECV.startsWith(marker))`
+  removes EVERY occurrence of the marker (JS replaceAll is global). Use a slice:
+  s.startsWith(P) ? s.slice(P.length) : s. (.replace(marker, "") is first-only
+  and is the correct strip — not flagged.) (JS analogue of giturlparse #149, cf249252.)
 severity: warning
 metadata:
   code: WL001
-  tier: pedantic
+  tier: default
   origin: nephila/giturlparse#149
   cross_language: JavaScript
+  guard_proven: true
