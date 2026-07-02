@@ -8,8 +8,10 @@ import fnmatch
 import json
 import sys
 import tokenize
+from collections.abc import Iterator, Sequence
 from io import StringIO
 from pathlib import Path
+from typing import Any
 
 from .checkers import CHECKERS, Finding, check_source
 from .property_templates import TEMPLATES, get_template
@@ -48,7 +50,7 @@ def _is_excluded(
     path: Path,
     *,
     no_default_exclude: bool,
-    extra_excludes,
+    extra_excludes: Sequence[str],
     skip_first: int = 0,
 ) -> bool:
     """Should a rglob-discovered `path` be skipped?
@@ -74,7 +76,12 @@ def _is_excluded(
     return False
 
 
-def _iter_python_files(paths, *, no_default_exclude=False, extra_excludes=()):
+def _iter_python_files(
+    paths: Sequence[str],
+    *,
+    no_default_exclude: bool = False,
+    extra_excludes: Sequence[str] = (),
+) -> Iterator[Path]:
     """Yield `.py` files to lint. Explicit file args are scanned as-is; directory
     args are walked with default/config excludes applied to descendants."""
     for raw in paths:
@@ -175,7 +182,7 @@ def check_file(
     return findings, errors
 
 
-def _load_config(cwd: Path) -> dict:
+def _load_config(cwd: Path) -> dict[str, Any]:
     """Read ``[tool.wildlint]`` from the nearest ``pyproject.toml`` at/above cwd.
 
     Recognized keys: ``select`` (list[str]), ``pedantic`` (bool), ``exclude``

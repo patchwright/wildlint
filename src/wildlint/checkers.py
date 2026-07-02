@@ -175,7 +175,9 @@ class _GuardedBodyWalk(ast.NodeVisitor):
     recurse normally -- they DO run under the guard.
     """
 
-    def __init__(self, checker, receiver_src: str, literal: str):
+    def __init__(
+        self, checker: ReplaceToEmptyPrefix, receiver_src: str, literal: str
+    ) -> None:
         self._checker = checker
         self._receiver_src = receiver_src
         self._literal = literal
@@ -185,7 +187,7 @@ class _GuardedBodyWalk(ast.NodeVisitor):
         if self._checker._is_replace_to_empty(node, self._receiver_src, self._literal):
             self.hits.append(node)
 
-    def visit_Call(self, node: ast.Call):
+    def visit_Call(self, node: ast.Call) -> None:
         self._record(node)
         self.generic_visit(node)
 
@@ -193,22 +195,21 @@ class _GuardedBodyWalk(ast.NodeVisitor):
         for d in list(args.defaults) + [k for k in args.kw_defaults if k is not None]:
             self.visit(d)
 
-    def _visit_def(self, node) -> None:
+    def _visit_def(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         # FunctionDef and AsyncFunctionDef share decorator_list + args; only the
-        # body is deferred. (Untyped param so both node kinds satisfy the type
-        # checker -- they are structurally identical for our purposes.)
+        # body is deferred.
         for d in node.decorator_list:
             self.visit(d)
         self._visit_arg_defaults(node.args)
         # intentionally do NOT recurse into node.body (runs at call time)
 
-    def visit_FunctionDef(self, node):
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._visit_def(node)
 
-    def visit_AsyncFunctionDef(self, node):
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._visit_def(node)
 
-    def visit_ClassDef(self, node):
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
         for d in node.decorator_list:
             self.visit(d)
         for b in node.bases:
@@ -217,7 +218,7 @@ class _GuardedBodyWalk(ast.NodeVisitor):
             self.visit(kw)
         # intentionally do NOT recurse into node.body (runs at instantiation time)
 
-    def visit_Lambda(self, node):
+    def visit_Lambda(self, node: ast.Lambda) -> None:
         self._visit_arg_defaults(node.args)
         # intentionally do NOT recurse into node.body (runs at call time)
 
