@@ -131,9 +131,17 @@ def check_file(
     """
     errors: list[str] = []
     try:
-        source = path.read_text(encoding="utf-8")
+        # tokenize.open honors the BOM / PEP-263 encoding cookie the same way
+        # CPython does for compilation, so a latin-1 file with `# -*- coding:
+        # latin-1 -*-` is decoded (and linted) rather than rejected as "not
+        # valid UTF-8". A malformed/unknown codec declaration raises SyntaxError
+        # here, not UnicodeDecodeError.
+        with tokenize.open(path) as fh:
+            source = fh.read()
+    except SyntaxError as exc:  # bad/unknown encoding declaration
+        return [], [f"{path}: error: {exc.msg}"]
     except UnicodeDecodeError:
-        return [], [f"{path}: error: not valid UTF-8, skipped"]
+        return [], [f"{path}: error: not valid in declared encoding, skipped"]
     except OSError as exc:
         return [], [f"{path}: error: {exc.strerror or exc}"]
 
@@ -147,11 +155,22 @@ def check_file(
     if noqa:
         kept: list[Finding] = []
         for f in findings:
-            if f.line in noqa:
-                directive = noqa[f.line]
-                if directive is None or f.code.upper() in directive:
-                    continue  # bare noqa (all codes) or matching code -> suppress
-            kept.append(f)
+            # A finding can span several lines (a chained call split across
+            # lines -- ast.Call.lineno is the receiver's line, end_lineno the
+            # closing paren). A noqa directive on ANY line of the span
+            # suppresses, but only if its code set matches (a bare noqa matches
+            # all). Checking only `line in noqa` without the code match would
+            # wrongly suppress e.g. a WL002 whose span crosses a WL001 noqa.
+            last = f.end_line or f.line
+            suppressed = False
+            for ln in range(f.line, last + 1):
+                if ln in noqa:
+                    directive = noqa[ln]
+                    if directive is None or f.code.upper() in directive:
+                        suppressed = True
+                        break
+            if not suppressed:
+                kept.append(f)
         findings = kept
     return findings, errors
 
@@ -324,6 +343,22 @@ def main(argv: list[str] | None = None) -> int:
         codes = {str(c).strip().upper() for c in sel if str(c).strip()} or None
     else:
         codes = None
+    if codes is not None:
+        # Fail loud on a typo'd/unknown --select code (or [tool.wildlint] select):
+        # without this, `--select WL01` resolves to zero checkers, nothing runs,
+        # exit 0, and CI goes green with zero signal. Warn naming the unknowns;
+        # exit 2 only when NOTHING valid would run (partial-unknown still runs
+        # the valid subset at the normal exit code).
+        known = {c.code for c in CHECKERS}
+        unknown = codes - known
+        if unknown:
+            print(
+                f"wildlint: unknown --select code(s): {sorted(unknown)}; "
+                f"known: {sorted(known)}",
+                file=sys.stderr,
+            )
+            if not (codes & known):
+                return 2
     extra_excludes: list[str] = []
     if isinstance(config.get("exclude"), list):
         extra_excludes += [str(e) for e in config["exclude"]]

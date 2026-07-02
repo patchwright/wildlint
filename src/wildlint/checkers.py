@@ -31,6 +31,11 @@ class Finding:
     col: int
     code: str
     message: str
+    # Last line the finding spans (a chained call split across lines reports the
+    # receiver's line as `line` and the closing paren here). 0 = single-line,
+    # i.e. spans only `line`. Used by the noqa filter so a directive on any line
+    # of the span suppresses.
+    end_line: int = 0
 
     def __str__(self) -> str:
         return f"{self.path}:{self.line}:{self.col}: {self.code} {self.message}"
@@ -137,6 +142,68 @@ def _argparse_dest(call: ast.Call) -> tuple[str, str] | None:
 
 
 # --------------------------------------------------------------------------- #
+# Scope-aware walk helper -- shared reasoning for the WL001 guard.
+# --------------------------------------------------------------------------- #
+class _GuardedBodyWalk(ast.NodeVisitor):
+    """Walk a guarded body WITHOUT descending into deferred-execution scopes.
+
+    The body of the guarding ``if`` executes while the guard holds, but a nested
+    function/class/lambda body runs only at call/instantiation time -- outside
+    the guard. ``ast.walk`` ignores that distinction (it crosses the lexical
+    boundary); this visitor stops at FunctionDef/AsyncFunctionDef/ClassDef/Lambda
+    bodies while still visiting the parts evaluated at definition time
+    (decorators, default args, class bases/keywords). For/while/with/if bodies
+    recurse normally -- they DO run under the guard.
+    """
+
+    def __init__(self, checker, receiver_src: str, literal: str):
+        self._checker = checker
+        self._receiver_src = receiver_src
+        self._literal = literal
+        self.hits: list[ast.Call] = []
+
+    def _record(self, node: ast.Call) -> None:
+        if self._checker._is_replace_to_empty(node, self._receiver_src, self._literal):
+            self.hits.append(node)
+
+    def visit_Call(self, node: ast.Call):
+        self._record(node)
+        self.generic_visit(node)
+
+    def _visit_arg_defaults(self, args: ast.arguments) -> None:
+        for d in list(args.defaults) + [k for k in args.kw_defaults if k is not None]:
+            self.visit(d)
+
+    def _visit_def(self, node) -> None:
+        # FunctionDef and AsyncFunctionDef share decorator_list + args; only the
+        # body is deferred. (Untyped param so both node kinds satisfy the type
+        # checker -- they are structurally identical for our purposes.)
+        for d in node.decorator_list:
+            self.visit(d)
+        self._visit_arg_defaults(node.args)
+        # intentionally do NOT recurse into node.body (runs at call time)
+
+    def visit_FunctionDef(self, node):
+        self._visit_def(node)
+
+    def visit_AsyncFunctionDef(self, node):
+        self._visit_def(node)
+
+    def visit_ClassDef(self, node):
+        for d in node.decorator_list:
+            self.visit(d)
+        for b in node.bases:
+            self.visit(b)
+        for kw in node.keywords:
+            self.visit(kw)
+        # intentionally do NOT recurse into node.body (runs at instantiation time)
+
+    def visit_Lambda(self, node):
+        self._visit_arg_defaults(node.args)
+        # intentionally do NOT recurse into node.body (runs at call time)
+
+
+# --------------------------------------------------------------------------- #
 # WL001 — replace-to-empty used as a prefix/suffix strip
 # Origin: nephila/giturlparse PR #149 (superseded by merged #152)
 # Provenance: fix merged in #152 (cf249252ed5); bug = .replace(group, "") as a strip.
@@ -194,25 +261,28 @@ class ReplaceToEmptyPrefix:
             # branch (``node.orelse``) runs when the guard is *false*, so a
             # ``.replace`` there is not the "guarded strip that drops every
             # occurrence" this rule targets -- flagging it was a false positive.
-            # Walk the body subtree only; nested control flow inside the body is
-            # still reached under the guard.
+            # The body is walked with _GuardedBodyWalk, which recurses into
+            # nested for/while/with/if (they run under the guard) but NOT into
+            # nested def/class/lambda bodies (those run at call/instantiation
+            # time, outside the guard) -- a lexical-scope analogue of the
+            # elif/else exclusion.
             for stmt in node.body:
-                for inner in ast.walk(stmt):
-                    if isinstance(inner, ast.Call) and self._is_replace_to_empty(
-                        inner, receiver_src, literal
-                    ):
-                        out.append(
-                            Finding(
-                                path,
-                                inner.lineno,
-                                inner.col_offset,
-                                self.code,
-                                f'.replace({literal!r}, "") guarded by '
-                                f"{'startswith' if suggestion == 'removeprefix' else 'endswith'}"
-                                f"({literal!r}) removes every occurrence; "
-                                f"use str.{suggestion}({literal!r})",
-                            )
+                walker = _GuardedBodyWalk(self, receiver_src, literal)
+                walker.visit(stmt)
+                for inner in walker.hits:
+                    out.append(
+                        Finding(
+                            path,
+                            inner.lineno,
+                            inner.col_offset,
+                            self.code,
+                            f'.replace({literal!r}, "") guarded by '
+                            f"{'startswith' if suggestion == 'removeprefix' else 'endswith'}"
+                            f"({literal!r}) removes every occurrence; "
+                            f"use str.{suggestion}({literal!r})",
+                            end_line=inner.end_lineno or inner.lineno,
                         )
+                    )
         return out
 
 
@@ -259,6 +329,7 @@ class SplitSingleSpace:
                     f".{node.func.attr}(' ') keeps empty tokens and will not "
                     "collapse/trim whitespace; use "
                     f".{node.func.attr}() unless single-space splitting is intended",
+                    end_line=node.end_lineno or node.lineno,
                 )
             )
         return out
@@ -305,6 +376,7 @@ class NegativeIndexNoGuard:
                         self.code,
                         f"{target}[-{idx.operand.value}] raises IndexError if "
                         f"len({target}) < {idx.operand.value}; add a length guard",
+                        end_line=node.end_lineno or node.lineno,
                     )
                 )
         return out
@@ -564,6 +636,7 @@ class NotAndInOr:
                             "not the trailing `or` branches; review whether the "
                             "guard should cover all (write `not A and (B or C)`) "
                             "-- most hits are legitimate (coolname #34).",
+                            end_line=val.end_lineno or val.lineno,
                         )
                     )
                     break  # one finding per `or` chain

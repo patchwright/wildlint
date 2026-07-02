@@ -483,3 +483,65 @@ def test_wl005_message_marked_advisory():
     src = "if not a and b or c:\n    pass\n"
     out = check_source(src, "t.py", pedantic=True)
     assert out and "advisory" in out[0].message.lower()
+
+
+# --------------------------------------------------------------------------- #
+# WL001 nested-scope: a .replace inside a nested def/class/lambda body defined
+# in the guarded region runs at CALL/instantiation time, NOT under the guard.
+# ast.walk crossed that lexical boundary (the same class of bug as elif/else);
+# the scope-aware visitor fixes it. Permanent fixtures.
+# --------------------------------------------------------------------------- #
+def test_wl001_silent_on_replace_inside_nested_def_in_body():
+    src = (
+        "def f(p):\n"
+        "    if p.startswith('/x/'):\n"
+        "        def g():\n"
+        "            return p.replace('/x/', '')\n"
+        "        return g\n"
+        "    return p\n"
+    )
+    assert "WL001" not in _codes(src)
+
+
+def test_wl001_silent_on_replace_inside_nested_async_def_in_body():
+    src = (
+        "async def f(p):\n"
+        "    if p.startswith('/x/'):\n"
+        "        async def g():\n"
+        "            return p.replace('/x/', '')\n"
+    )
+    assert "WL001" not in _codes(src)
+
+
+def test_wl001_silent_on_replace_inside_nested_class_in_body():
+    src = (
+        "class C: pass\n"
+        "def f(p):\n"
+        "    if p.startswith('/x/'):\n"
+        "        class D(C):\n"
+        "            v = p.replace('/x/', '')\n"
+    )
+    assert "WL001" not in _codes(src)
+
+
+def test_wl001_silent_on_replace_inside_nested_lambda_in_body():
+    src = (
+        "def f(p):\n"
+        "    if p.startswith('/x/'):\n"
+        "        g = lambda: p.replace('/x/', '')\n"
+        "        return g\n"
+    )
+    assert "WL001" not in _codes(src)
+
+
+def test_wl001_still_fires_on_replace_in_nested_default_arg():
+    # A default-arg value IS evaluated at def-time (under the guard), so the
+    # .replace there still fires -- locks in that the scope fix does not
+    # over-narrow.
+    src = (
+        "def f(p):\n"
+        "    if p.startswith('/x/'):\n"
+        "        def g(q=p.replace('/x/', '')):\n"
+        "            return q\n"
+    )
+    assert "WL001" in _codes(src)
