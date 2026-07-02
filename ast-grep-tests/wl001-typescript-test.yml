@@ -1,0 +1,9 @@
+id: wl001-typescript-replace-as-strip
+invalid:
+  - |-
+    path.replace("/blob/", "")
+  - |-
+    path.replaceAll("/blob/", "")
+valid:
+  - |-
+    path.startsWith("/blob/") ? path.slice(6) : path

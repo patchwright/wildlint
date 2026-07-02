@@ -1,0 +1,7 @@
+id: wl001-rust-replace-as-strip
+invalid:
+  - |-
+    s.replace("/blob/", "")
+valid:
+  - |-
+    s.strip_prefix("/blob/")

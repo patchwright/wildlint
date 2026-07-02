@@ -1,0 +1,8 @@
+id: wl002-go-split-single-space
+snapshots:
+  strings.Split(s, " "):
+    labels:
+    - source: strings.Split(s, " ")
+      style: primary
+      start: 0
+      end: 21

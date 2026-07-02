@@ -1,0 +1,7 @@
+id: wl002-javascript-split-single-space
+invalid:
+  - |-
+    s.split(" ")
+valid:
+  - |-
+    s.split(/\s+/)

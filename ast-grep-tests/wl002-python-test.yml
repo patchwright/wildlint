@@ -1,0 +1,9 @@
+id: wl002-python-split-single-space
+invalid:
+  - |-
+    s.split(" ")
+  - |-
+    s.rsplit(" ", 1)
+valid:
+  - |-
+    s.split()

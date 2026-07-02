@@ -1,0 +1,9 @@
+id: wl005-rust-not-and-in-or
+invalid:
+  - |-
+    !a && b || c
+valid:
+  - |-
+    !a && (b || c)
+  - |-
+    (!a && b) || c

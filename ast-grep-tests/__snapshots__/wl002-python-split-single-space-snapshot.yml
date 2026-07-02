@@ -1,0 +1,14 @@
+id: wl002-python-split-single-space
+snapshots:
+  s.rsplit(" ", 1):
+    labels:
+    - source: s.rsplit(" ", 1)
+      style: primary
+      start: 0
+      end: 16
+  s.split(" "):
+    labels:
+    - source: s.split(" ")
+      style: primary
+      start: 0
+      end: 12
