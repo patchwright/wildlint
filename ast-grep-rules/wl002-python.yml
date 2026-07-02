@@ -1,0 +1,28 @@
+# WL002 — str.split(' ') instead of str.split() (Python)
+# Real-bug origin: derek73/python-nameparser PR #164 (fix merged, 5c1954718cd).
+# Bug shape: `name.split(' ')`. A single-space split keeps empty tokens and does
+# NOT collapse runs or trim ends ("a  b ".split(' ') -> ['a','','b','']),
+# whereas .split() does both. Only an EXACT single-space literal fires; '  ' or
+# ',' is treated as a deliberate delimiter and left alone.
+#
+# ast-grep note: string-literal quote style is NOT normalized by ast-grep
+# (pattern " " will not match source ' '), so we list both quote styles per
+# shape under `rule.any`.
+id: wl002-python-split-single-space
+language: Python
+rule:
+  any:
+    - pattern: $RECV.split(' ')
+    - pattern: $RECV.split(" ")
+    - pattern: $RECV.rsplit(' ', $N)
+    - pattern: $RECV.rsplit(" ", $N)
+message: |
+  WL002: .split(' ') / .rsplit(' ') keeps empty tokens and will not collapse or
+  trim whitespace; use .split() / .rsplit() unless single-space splitting is
+  genuinely intended. Origin: derek73/python-nameparser #164 (5c1954718cd).
+severity: warning    # pedantic tier in the Python linter; review hits manually
+metadata:
+  code: WL002
+  tier: pedantic
+  origin: derek73/python-nameparser#164
+  fix_merge: "5c1954718cd"

@@ -1,0 +1,7 @@
+id: wl002-typescript-split-single-space
+invalid:
+  - |-
+    s.split(" ")
+valid:
+  - |-
+    s.split(/\s+/)

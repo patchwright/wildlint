@@ -1,0 +1,14 @@
+id: wl001-go-replace-as-strip
+snapshots:
+  strings.Replace(path, "/blob/", "", 1):
+    labels:
+    - source: strings.Replace(path, "/blob/", "", 1)
+      style: primary
+      start: 0
+      end: 38
+  strings.ReplaceAll(path, "/blob/", ""):
+    labels:
+    - source: strings.ReplaceAll(path, "/blob/", "")
+      style: primary
+      start: 0
+      end: 38

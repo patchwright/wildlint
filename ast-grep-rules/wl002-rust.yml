@@ -1,0 +1,22 @@
+# WL002 — str.split(' ') instead of split_whitespace() (Rust)
+# Real-bug origin (cross-language analogue): derek73/python-nameparser #164
+# (Python, 5c1954718cd). Rust's str::split(' ') keeps empty tokens and does not
+# collapse runs ("a  b ".split(' ') -> ["a","","b",""]), whereas
+# split_whitespace() collapses runs and ignores leading/trailing whitespace —
+# the exact behavioral gap the Python rule warns about. Only an EXACT single
+# space literal fires.
+id: wl002-rust-split-single-space
+language: Rust
+rule:
+  pattern: $RECV.split(" ")
+message: |
+  WL002: .split(' ') keeps empty tokens and will not collapse or trim
+  whitespace; use .split_whitespace() (or .split_ascii_whitespace()) unless
+  single-space splitting is genuinely intended.
+  (Rust analogue of python-nameparser #164, 5c1954718cd.)
+severity: warning
+metadata:
+  code: WL002
+  tier: pedantic
+  origin: derek73/python-nameparser#164
+  cross_language: Rust

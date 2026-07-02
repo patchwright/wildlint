@@ -1,0 +1,11 @@
+id: wl001-python-replace-as-strip
+invalid:
+  - |-
+    path.replace("/blob/", "")
+  - |-
+    path.replace('/blob/', '')
+valid:
+  - |-
+    path.removeprefix('/blob/')
+  - |-
+    path.removesuffix('/blob/')

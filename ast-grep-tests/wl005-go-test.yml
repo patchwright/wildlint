@@ -1,0 +1,7 @@
+id: wl005-go-not-and-in-or
+invalid:
+  - |-
+    !a && b || c
+valid:
+  - |-
+    !a && (b || c)

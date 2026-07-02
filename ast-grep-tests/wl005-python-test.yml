@@ -1,0 +1,7 @@
+id: wl005-python-not-and-in-or
+invalid:
+  - |-
+    not a and b or c
+valid:
+  - |-
+    not a and (b or c)

@@ -1,0 +1,7 @@
+id: wl002-go-split-single-space
+invalid:
+  - |-
+    strings.Split(s, " ")
+valid:
+  - |-
+    strings.Fields(s)

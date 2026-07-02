@@ -1,0 +1,29 @@
+# WL002 — String.split(' ') instead of trim+regex split (JavaScript, .js)
+# Real-bug origin (cross-language analogue): derek73/python-nameparser #164
+# (Python, 5c1954718cd). JS's "a  b ".split(' ') yields ["a","","b,""] — empty
+# tokens kept, no run-collapsing or trimming. The collapse-and-trim idiom is
+# `s.trim().split(/\s+/)` (or split on \s+ and drop empties). Only an EXACT
+# single space literal fires; a regex or multi-char delimiter is left alone.
+#
+# ast-grep notes:
+#  - string-literal quote style is NOT normalized (pattern " " will not match
+#    source ' '), so both quote styles are listed under `rule.any`.
+#  - language: JavaScript only matches .js files; .ts needs a separate rule
+#    with language: TypeScript — see wl002-typescript.yml.
+id: wl002-javascript-split-single-space
+language: JavaScript   # matches .js; .ts needs wl002-typescript.yml
+rule:
+  any:
+    - pattern: $RECV.split(' ')
+    - pattern: $RECV.split(" ")
+message: |
+  WL002: .split(' ') keeps empty tokens and will not collapse or trim
+  whitespace; use .trim().split(/\s+/) (or drop empty segments) unless
+  single-space splitting is genuinely intended.
+  (JS analogue of python-nameparser #164, 5c1954718cd.)
+severity: warning
+metadata:
+  code: WL002
+  tier: pedantic
+  origin: derek73/python-nameparser#164
+  cross_language: JavaScript

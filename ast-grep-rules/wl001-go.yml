@@ -1,0 +1,26 @@
+# WL001 — replace-to-empty used as a prefix/suffix strip (Go)
+# Real-bug origin (cross-language analogue): nephila/giturlparse #149 (Python),
+# cf249252. Go's strings.ReplaceAll(s, marker, "") and strings.Replace(s,
+# marker, "", n<0) substitute EVERY occurrence, so a value containing the
+# marker twice is silently corrupted when the intent was just to drop a
+# prefix/suffix. Idiomatic fix: strings.TrimPrefix / strings.TrimSuffix.
+#
+# Reviewer step: confirm the call is inside a strings.HasPrefix / HasSuffix
+# guard on the same receiver. ast-grep flags the call site; it does not prove
+# the guard holds.
+id: wl001-go-replace-as-strip
+language: Go
+rule:
+  any:
+    - pattern: strings.ReplaceAll($RECV, $LIT, "")
+    - pattern: strings.Replace($RECV, $LIT, "", $N)
+message: |
+  WL001: strings.ReplaceAll/Replace(x, marker, "") guarded by HasPrefix/HasSuffix
+  removes EVERY occurrence of the marker. Use strings.TrimPrefix /
+  strings.TrimSuffix instead. (Go analogue of giturlparse #149, cf249252.)
+severity: warning
+metadata:
+  code: WL001
+  tier: default
+  origin: nephila/giturlparse#149
+  cross_language: Go

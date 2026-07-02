@@ -1,0 +1,34 @@
+# WL001 — replace-to-empty used as a prefix/suffix strip (TypeScript, .ts)
+# Real-bug origin (cross-language analogue): nephila/giturlparse #149 (Python),
+# cf249252. Note the TS/JS nuance:
+#   - String.prototype.replace(marker, "") replaces ONLY the FIRST occurrence
+#     (silent prefix-strip — bug class is "you meant replaceAll and got one").
+#   - String.prototype.replaceAll(marker, "") removes EVERY occurrence
+#     (the full giturlparse shape — strips all, corrupting repeated markers).
+# Both forms under a startsWith/endsWith guard are suspicious. The idiomatic
+# strip is `s.startsWith(P) ? s.slice(P.length) : s` (prefix) / slice for suffix,
+# or a small helper; there is no built-in removeprefix in TS.
+#
+# Reviewer step: confirm the call is inside a startsWith/endsWith guard on the
+# same receiver. ast-grep flags the call site; it does not prove the guard.
+#
+# ast-grep note: language: TypeScript matches .ts (and .tsx needs language:
+# Tsx — add a parallel rule if you scan .tsx). For .js files use
+# wl001-javascript.yml. ast-grep requires one rule file per language tag.
+id: wl001-typescript-replace-as-strip
+language: TypeScript
+rule:
+  any:
+    - pattern: $RECV.replace($LIT, "")
+    - pattern: $RECV.replaceAll($LIT, "")
+message: |
+  WL001: $RECV.replace[All](marker, "") guarded by startsWith/endsWith(marker)
+  is a prefix/suffix strip done wrong (.replace drops only the first match;
+  .replaceAll drops every occurrence). Use an explicit slice-based strip.
+  (TS analogue of giturlparse #149, cf249252.)
+severity: warning
+metadata:
+  code: WL001
+  tier: default
+  origin: nephila/giturlparse#149
+  cross_language: TypeScript

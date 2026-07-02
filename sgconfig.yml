@@ -1,0 +1,16 @@
+# ast-grep root config for the wildlint multi-language rule pack.
+#
+#   sg scan .             # run all rules in ast-grep-rules/ against the cwd
+#   sg test               # run the regression suite in ast-grep-tests/
+#
+# NOTE: ast-grep loads config under camelCase keys (ruleDirs / testConfigs).
+# The snake_case forms (rule_dirs / test_dirs) are silently ignored, which
+# registers zero rules — keep these keys as-is.
+#
+# The rule pack mirrors WL001/WL002/WL005 from the Python CLI (src/wildlint/)
+# across Python/Rust/Go/TypeScript/JavaScript for use with the ast-grep CLI /
+# IDE integrations. See ast-grep-rules/README.md.
+ruleDirs:
+  - ast-grep-rules
+testConfigs:
+  - testDir: ast-grep-tests
