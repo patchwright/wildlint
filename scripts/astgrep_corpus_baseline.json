@@ -10,6 +10,9 @@
       "wl002-javascript-split-single-space": 6,
       "wl005-javascript-not-and-in-or": 5
     },
+    "pallets/jinja": {
+      "wl002-python-split-single-space": 1
+    },
     "serde-rs/json": {},
     "spf13/cobra": {
       "wl002-go-split-single-space": 10

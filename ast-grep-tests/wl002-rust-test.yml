@@ -2,6 +2,8 @@ id: wl002-rust-split-single-space
 invalid:
   - |-
     s.split(" ")
+  - |-
+    s.split(' ')
 valid:
   - |-
     s.split_whitespace()

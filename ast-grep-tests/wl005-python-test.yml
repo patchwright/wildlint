@@ -5,3 +5,5 @@ invalid:
 valid:
   - |-
     not a and (b or c)
+  - |-
+    (not a and b) or c
