@@ -1,24 +1,25 @@
 # WL001 — replace-to-empty used as a prefix/suffix strip (Rust)
 # Real-bug origin (cross-language analogue): nephila/giturlparse #149 (Python),
-# cf249252. Rust's str::replace and String::replace likewise substitute EVERY
-# non-overlapping match, so `s.replace("/blob/", "")` guarded by
-# `s.starts_with("/blob/")` strips every occurrence, not just the prefix.
+# cf249252. Rust's str::replace / String::replace substitute EVERY non-overlapping
+# match, so `s.replace("/blob/", "")` strips every occurrence, not just the prefix.
 # Idiomatic fix: str::strip_prefix / str::strip_suffix (return Option<&str>).
 #
-# Reviewer step: confirm the call is inside a `starts_with`/`ends_with` guard
-# on the same receiver. ast-grep flags the call site; it does not prove the
-# guard holds.
+# Tier note: PEDANTIC (candidate-only). This ast-grep rule fires on the call site
+# only; it does NOT prove an enclosing starts_with/ends_with guard. Review each
+# hit against the surrounding guard before acting.
 id: wl001-rust-replace-as-strip
 language: Rust
 rule:
   pattern: $RECV.replace($LIT, "")
 message: |
-  WL001: $RECV.replace(marker, "") guarded by starts_with/ends_with(marker)
-  removes EVERY occurrence of the marker. Use str::strip_prefix /
-  str::strip_suffix instead. (Rust analogue of giturlparse #149, cf249252.)
+  WL001 (candidate): $RECV.replace(marker, "") removes EVERY occurrence of the
+  marker (Rust str::replace is global). If this is a prefix or suffix strip, use
+  str::strip_prefix / str::strip_suffix. ast-grep flags the call site only — it
+  does NOT prove a starts_with/ends_with guard; review before acting.
+  (Rust analogue of giturlparse #149, cf249252.)
 severity: warning
 metadata:
   code: WL001
-  tier: default
+  tier: pedantic
   origin: nephila/giturlparse#149
   cross_language: Rust

@@ -1,9 +1,9 @@
 id: wl001-javascript-replace-as-strip
 invalid:
   - |-
-    path.replace("/blob/", "")
-  - |-
     path.replaceAll("/blob/", "")
 valid:
+  - |-
+    path.replace("/blob/", "")
   - |-
     path.startsWith("/blob/") ? path.slice(6) : path

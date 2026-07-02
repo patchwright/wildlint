@@ -124,12 +124,25 @@ npm install -g @ast-grep/cli
 sg scan .      # from the repo root — picks up sgconfig.yml
 ```
 
-Each rule file carries its own provenance and ast-grep-specific caveats (e.g. WL001
-splits the empty-literal `any:` arm across quote styles, since ast-grep does not
-normalize Python string-literal quotes; WL005's pattern is paren-respecting and does
-*not* fire on `(!A && B) || C`). The pack ships a committed regression suite — `sg
-test` runs 15 valid/invalid case files against committed snapshots, gated in CI
-alongside the Python tests. Details: [`ast-grep-rules/README.md`](ast-grep-rules/README.md).
+Each rule file carries its own provenance and ast-grep-specific caveats. Two are
+load-bearing and worth stating up front, because they differ from the Python CLI:
+
+- **All ast-grep WL001 variants are `pedantic` (candidate-only), not `default`.**
+  The Python CLI's default-tier WL001 *proves* an enclosing `startswith`/`endswith`
+  guard; a single ast-grep pattern can't do that AND-match, so these rules fire on
+  the call site alone. Treat hits as review candidates, not confirmed bugs.
+- **Language semantics are respected in which call is flagged.** JS/TS flags
+  `.replaceAll(marker, "")` only — `.replace(marker, "")` is first-only and is the
+  *correct* prefix strip, so it is not flagged. Go flags `strings.ReplaceAll` only —
+  `strings.Replace(s, m, "", 1)` is a safe single replacement. Python and Rust flag
+  `.replace`/`::replace` (both global). WL005's pattern is paren-respecting and does
+  *not* fire on `(!A && B) || C`.
+
+The pack ships a committed regression suite — `sg test` runs 15 valid/invalid case
+files against committed snapshots, gated in CI alongside the Python tests — plus a
+multi-language corpus gate (`scripts/astgrep_corpus_diff.py`, pinned real repos per
+language) that gates releases the same way `corpus_diff` does for Python. Details:
+[`ast-grep-rules/README.md`](ast-grep-rules/README.md).
 
 ## Property-test templates
 

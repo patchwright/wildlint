@@ -4,16 +4,16 @@
 # str.replace removes EVERY occurrence, so "/blob/x/blob/y" -> "x/y" (data loss).
 # Author meant str.removeprefix / str.removesuffix.
 #
-# ast-grep notes:
-#  1. A single rule cannot AND a call with an enclosing if-guard in one pattern,
-#     so this rule fires on the replace-to-empty call site wherever the receiver
-#     is bound. The Python checker (checkers.py) additionally PROVES the guard
-#     holds; treat ast-grep hits as candidates to review against the surrounding
-#     startswith/endswith, not as confirmed bugs.
-#  2. ast-grep does NOT normalize Python string-literal quote style: a pattern
-#     literal `""` will not match source `''` and vice versa. We therefore split
-#     into two `any:` arms — one for each empty-literal quote style — so both
-#     `path.replace('/blob/', '')` and `path.replace("/blob/", "")` fire.
+# Tier note: PEDANTIC (candidate-only). Unlike the Python CLI's default-tier
+# WL001 (src/wildlint/checkers.py), which PROVES an enclosing startswith/endswith
+# guard holds, a single ast-grep pattern cannot AND a call with its if-guard, so
+# this rule fires on any replace-to-empty call. Treat hits as candidates to review
+# against the surrounding startswith/endswith, NOT as confirmed bugs.
+#
+# ast-grep does NOT normalize Python string-literal quote style: a pattern
+# literal `""` will not match source `''` and vice versa. We therefore split
+# into two `any:` arms — one for each empty-literal quote style — so both
+# `path.replace('/blob/', '')` and `path.replace("/blob/", "")` fire.
 id: wl001-python-replace-as-strip
 language: Python
 rule:
@@ -21,13 +21,14 @@ rule:
     - pattern: $RECV.replace($LIT, '')
     - pattern: $RECV.replace($LIT, "")
 message: |
-  WL001: $RECV.replace(marker, "") guarded by startswith/endswith(marker)
-  removes EVERY occurrence of the marker (not just the prefix/suffix).
-  Use str.removeprefix / str.removesuffix instead.
+  WL001 (candidate): $RECV.replace(marker, "") removes EVERY occurrence of the
+  marker (Python str.replace is global, not first-only). If this is a prefix or
+  suffix strip, use str.removeprefix / str.removesuffix. ast-grep flags the call
+  site only — it does NOT prove a startswith/endswith guard; review before acting.
   Origin: nephila/giturlparse #149 (fix merged in #152, cf249252).
 severity: warning
 metadata:
   code: WL001
-  tier: default
+  tier: pedantic
   origin: nephila/giturlparse#149
   fix_merge: "#152 cf249252ed5"

@@ -1,26 +1,32 @@
 # WL001 — replace-to-empty used as a prefix/suffix strip (Go)
 # Real-bug origin (cross-language analogue): nephila/giturlparse #149 (Python),
-# cf249252. Go's strings.ReplaceAll(s, marker, "") and strings.Replace(s,
-# marker, "", n<0) substitute EVERY occurrence, so a value containing the
-# marker twice is silently corrupted when the intent was just to drop a
-# prefix/suffix. Idiomatic fix: strings.TrimPrefix / strings.TrimSuffix.
+# cf249252. strings.ReplaceAll(s, marker, "") substitutes EVERY occurrence, so a
+# value containing the marker twice is silently corrupted when the intent was just
+# to drop a prefix/suffix. Idiomatic fix: strings.TrimPrefix / strings.TrimSuffix.
 #
-# Reviewer step: confirm the call is inside a strings.HasPrefix / HasSuffix
-# guard on the same receiver. ast-grep flags the call site; it does not prove
-# the guard holds.
+# Arm note: only strings.ReplaceAll is flagged. strings.Replace(s, marker, "", n)
+# is deliberately NOT flagged: n>0 means "at most n occurrences", so n==1 is a
+# safe, intentional single replacement (the correct prefix-strip shape), and only
+# n<0 means "all". Flagging the parameterized form would false-positive on n==1;
+# the all-occurrence intent is captured by ReplaceAll. (Replace with n<0 is the
+# identical but rare spelling — coverage deferred until an n-constraint is added.)
+#
+# Tier note: PEDANTIC (candidate-only). This ast-grep rule fires on the call site
+# only; it does NOT prove an enclosing strings.HasPrefix/HasSuffix guard. Review
+# each hit against the surrounding guard.
 id: wl001-go-replace-as-strip
 language: Go
 rule:
-  any:
-    - pattern: strings.ReplaceAll($RECV, $LIT, "")
-    - pattern: strings.Replace($RECV, $LIT, "", $N)
+  pattern: strings.ReplaceAll($RECV, $LIT, "")
 message: |
-  WL001: strings.ReplaceAll/Replace(x, marker, "") guarded by HasPrefix/HasSuffix
-  removes EVERY occurrence of the marker. Use strings.TrimPrefix /
-  strings.TrimSuffix instead. (Go analogue of giturlparse #149, cf249252.)
+  WL001 (candidate): strings.ReplaceAll(x, marker, "") removes EVERY occurrence
+  of the marker. If this is a prefix or suffix strip, use strings.TrimPrefix /
+  strings.TrimSuffix. ast-grep flags the call site only — it does NOT prove a
+  HasPrefix/HasSuffix guard; review before acting.
+  (Go analogue of giturlparse #149, cf249252.)
 severity: warning
 metadata:
   code: WL001
-  tier: default
+  tier: pedantic
   origin: nephila/giturlparse#149
   cross_language: Go

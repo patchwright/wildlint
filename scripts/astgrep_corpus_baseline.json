@@ -1,0 +1,18 @@
+{
+  "_note": "ast-grep rule-pack counts over a pinned multi-language corpus. Re-cut with --update only after a deliberate rule change; record why.",
+  "counts": {
+    "date-fns/date-fns": {
+      "wl002-typescript-split-single-space": 2
+    },
+    "expressjs/express": {},
+    "gin-gonic/gin": {},
+    "lodash/lodash": {
+      "wl002-javascript-split-single-space": 6,
+      "wl005-javascript-not-and-in-or": 5
+    },
+    "serde-rs/json": {},
+    "spf13/cobra": {
+      "wl002-go-split-single-space": 10
+    }
+  }
+}
