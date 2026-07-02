@@ -125,18 +125,31 @@ sg scan .      # from the repo root — picks up sgconfig.yml
 ```
 
 Each rule file carries its own provenance and ast-grep-specific caveats. Two are
-load-bearing and worth stating up front, because they differ from the Python CLI:
+load-bearing and worth stating up front:
 
-- **All ast-grep WL001 variants are `pedantic` (candidate-only), not `default`.**
-  The Python CLI's default-tier WL001 *proves* an enclosing `startswith`/`endswith`
-  guard; a single ast-grep pattern can't do that AND-match, so these rules fire on
-  the call site alone. Treat hits as review candidates, not confirmed bugs.
-- **Language semantics are respected in which call is flagged.** JS/TS flags
+- **WL001 is guard-proven default tier, matching the Python CLI.** Each ast-grep
+  WL001 variant matches the replace/replaceAll/ReplaceAll call ONLY when it sits
+  inside an `if` guarded by `startsWith`/`HasPrefix`/`starts_with` (or the
+  `ends…` form) on the SAME receiver and marker literal — the same precision that
+  makes the Python CLI's WL001 effectively zero-false-positive. ast-grep's
+  `inside: { stopBy: end }` relational rule with unified `$RECV`/`$LIT` is what
+  makes this expressible. Compound guards (`if x.startsWith(m) and …:`) fall
+  through to manual review. (In 0.7.0–0.7.1 these rules were unguarded pedantic
+  candidates; the guard check landed in 0.7.2.)
+- **Language semantics are respected in which call can be the bug.** JS/TS flags
   `.replaceAll(marker, "")` only — `.replace(marker, "")` is first-only and is the
-  *correct* prefix strip, so it is not flagged. Go flags `strings.ReplaceAll` only —
-  `strings.Replace(s, m, "", 1)` is a safe single replacement. Python and Rust flag
-  `.replace`/`::replace` (both global). WL005's pattern is paren-respecting and does
-  *not* fire on `(!A && B) || C`.
+  *correct* prefix strip. Go flags `strings.ReplaceAll` only — `strings.Replace(…,
+  n)` with `n>0` is a safe single replacement (and the parameterized pattern is
+  grammar-fragile in ast-grep's Go parser besides). Python and Rust flag
+  `.replace`/`::replace` (both global). WL005 is paren-respecting and does *not*
+  fire on `(!A && B) || C`.
+
+The pack has two layers of adversarial validation, mirroring the Python core:
+hand-written `sg test` cases (15) plus a pinned-real-repo corpus gate
+(`scripts/astgrep_corpus_diff.py`, gates releases alongside the Python corpus
+gate) and a weekly drift-watch (`scripts/astgrep_drift_watch.py`) that scans
+moving upstream HEAD and opens an issue for any new finding. Details:
+[`ast-grep-rules/README.md`](ast-grep-rules/README.md).
 
 The pack ships a committed regression suite — `sg test` runs 15 valid/invalid case
 files against committed snapshots, gated in CI alongside the Python tests — plus a

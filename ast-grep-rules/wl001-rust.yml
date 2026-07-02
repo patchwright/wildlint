@@ -1,25 +1,33 @@
-# WL001 — replace-to-empty used as a prefix/suffix strip (Rust)
+# WL001 — guarded replace-to-empty as prefix/suffix strip (Rust)
 # Real-bug origin (cross-language analogue): nephila/giturlparse #149 (Python),
 # cf249252. Rust's str::replace / String::replace substitute EVERY non-overlapping
-# match, so `s.replace("/blob/", "")` strips every occurrence, not just the prefix.
-# Idiomatic fix: str::strip_prefix / str::strip_suffix (return Option<&str>).
+# match, so `s.replace("/blob/", "")` inside `if s.starts_with("/blob/")` strips
+# every occurrence, not just the prefix. Idiomatic fix: str::strip_prefix /
+# str::strip_suffix (return Option<&str>).
 #
-# Tier note: PEDANTIC (candidate-only). This ast-grep rule fires on the call site
-# only; it does NOT prove an enclosing starts_with/ends_with guard. Review each
-# hit against the surrounding guard before acting.
+# Guard-proven default tier (see wl001-python.yml for the rationale): matches the
+# replace call only inside an if guarded by starts_with/ends_with on the same
+# receiver + marker. Compound guards fall through to manual review.
+#
+# ast-grep mechanics: `inside` with `stopBy: end`; if-pattern keeps the braces
+# (`if cond { body }`); $RECV/$LIT unify across the boundary.
 id: wl001-rust-replace-as-strip
 language: Rust
 rule:
   pattern: $RECV.replace($LIT, "")
+  inside:
+    stopBy: end
+    any:
+      - pattern: 'if $RECV.starts_with($LIT) { $$$BODY }'
+      - pattern: 'if $RECV.ends_with($LIT) { $$$BODY }'
 message: |
-  WL001 (candidate): $RECV.replace(marker, "") removes EVERY occurrence of the
-  marker (Rust str::replace is global). If this is a prefix or suffix strip, use
-  str::strip_prefix / str::strip_suffix. ast-grep flags the call site only — it
-  does NOT prove a starts_with/ends_with guard; review before acting.
-  (Rust analogue of giturlparse #149, cf249252.)
+  WL001: $RECV.replace(marker, "") inside `if $RECV.starts_with(marker)` removes
+  EVERY occurrence of the marker (Rust str::replace is global). Use
+  str::strip_prefix / str::strip_suffix. (Rust analogue of giturlparse #149, cf249252.)
 severity: warning
 metadata:
   code: WL001
-  tier: pedantic
+  tier: default
   origin: nephila/giturlparse#149
   cross_language: Rust
+  guard_proven: true

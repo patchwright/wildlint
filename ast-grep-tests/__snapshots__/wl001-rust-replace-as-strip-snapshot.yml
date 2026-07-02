@@ -1,8 +1,18 @@
 id: wl001-rust-replace-as-strip
 snapshots:
-  s.replace("/blob/", ""):
-    labels:
+  ? |-
+    if s.starts_with("/blob/") {
+        let x = s.replace("/blob/", "");
+    }
+  : labels:
     - source: s.replace("/blob/", "")
       style: primary
+      start: 41
+      end: 64
+    - source: |-
+        if s.starts_with("/blob/") {
+            let x = s.replace("/blob/", "");
+        }
+      style: secondary
       start: 0
-      end: 23
+      end: 67

@@ -1,7 +1,15 @@
 id: wl001-rust-replace-as-strip
 invalid:
   - |-
-    s.replace("/blob/", "")
+    if s.starts_with("/blob/") {
+        let x = s.replace("/blob/", "");
+    }
 valid:
   - |-
-    s.strip_prefix("/blob/")
+    let x = s.replace("/blob/", "");
+  - |-
+    if s.starts_with("/blob/") {
+        let x = s.replace("/x/", "");
+    }
+  - |-
+    let x = s.strip_prefix("/blob/");

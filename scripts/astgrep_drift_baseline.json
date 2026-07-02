@@ -1,0 +1,43 @@
+{
+  "_note": "Reviewed-accepted ast-grep findings on moving upstream HEAD. Re-seed with --accept after triaging new findings.",
+  "fingerprints": {
+    "cheeriojs/cheerio": [],
+    "date-fns/date-fns": [
+      "wl002-javascript-split-single-space|pkgs/tz/playground.mjs|139",
+      "wl002-javascript-split-single-space|pkgs/tz/playground.mjs|3",
+      "wl002-javascript-split-single-space|pkgs/tz/src/date/index.js|27",
+      "wl002-javascript-split-single-space|pkgs/tz/src/date/index.js|34",
+      "wl002-typescript-split-single-space|pkgs/core/src/locale/lb/_lib/formatDistance/index.ts|201",
+      "wl002-typescript-split-single-space|pkgs/core/src/locale/mn/_lib/formatDistance/index.ts|104"
+    ],
+    "expressjs/express": [],
+    "gin-gonic/gin": [],
+    "lodash/lodash": [
+      "wl002-javascript-split-single-space|lib/main/build-site.js|130",
+      "wl002-javascript-split-single-space|lib/main/build-site.js|145",
+      "wl002-javascript-split-single-space|vendor/firebug-lite/src/firebug-lite-debug.js|16103",
+      "wl002-javascript-split-single-space|vendor/firebug-lite/src/firebug-lite-debug.js|1780",
+      "wl002-javascript-split-single-space|vendor/firebug-lite/src/firebug-lite-debug.js|17892",
+      "wl005-javascript-not-and-in-or|dist/lodash.min.js|29",
+      "wl005-javascript-not-and-in-or|vendor/firebug-lite/src/firebug-lite-debug.js|11375",
+      "wl005-javascript-not-and-in-or|vendor/firebug-lite/src/firebug-lite-debug.js|7697"
+    ],
+    "serde-rs/json": [],
+    "spf13/cobra": [
+      "wl002-go-split-single-space|completions_test.go|4065",
+      "wl002-go-split-single-space|flag_groups.go|125",
+      "wl002-go-split-single-space|flag_groups.go|245",
+      "wl002-go-split-single-space|flag_groups.go|266",
+      "wl002-go-split-single-space|flag_groups.go|280",
+      "wl002-go-split-single-space|flag_groups_test.go|167",
+      "wl002-go-split-single-space|flag_groups_test.go|170",
+      "wl002-go-split-single-space|flag_groups_test.go|173",
+      "wl002-go-split-single-space|flag_groups_test.go|176",
+      "wl002-go-split-single-space|flag_groups_test.go|179",
+      "wl002-go-split-single-space|flag_groups_test.go|182"
+    ],
+    "urfave/cli": [
+      "wl002-go-split-single-space|command_test.go|1021"
+    ]
+  }
+}

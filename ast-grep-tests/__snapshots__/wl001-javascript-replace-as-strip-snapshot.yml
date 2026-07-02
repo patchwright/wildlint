@@ -1,8 +1,18 @@
 id: wl001-javascript-replace-as-strip
 snapshots:
-  path.replaceAll("/blob/", ""):
-    labels:
-    - source: path.replaceAll("/blob/", "")
+  ? |-
+    if (s.startsWith("/blob/")) {
+        s = s.replaceAll("/blob/", "");
+    }
+  : labels:
+    - source: s.replaceAll("/blob/", "")
       style: primary
+      start: 38
+      end: 64
+    - source: |-
+        if (s.startsWith("/blob/")) {
+            s = s.replaceAll("/blob/", "");
+        }
+      style: secondary
       start: 0
-      end: 29
+      end: 67

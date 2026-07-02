@@ -1,34 +1,45 @@
-# WL001 — replace-to-empty used as a prefix/suffix strip (Python)
-# Real-bug origin: nephila/giturlparse PR #149 (superseded by merged #152, cf249252).
-# Bug shape: `if path.startswith('/blob/'): ... path.replace('/blob/', '')` —
-# str.replace removes EVERY occurrence, so "/blob/x/blob/y" -> "x/y" (data loss).
-# Author meant str.removeprefix / str.removesuffix.
+# WL001 — guarded replace-to-empty as prefix/suffix strip (Python)
+# Real-bug origin: nephila/giturlparse PR #149 (merged #152, cf249252). Bug shape:
+# `if path.startswith('/blob/'): ... path.replace('/blob/', '')` — str.replace
+# removes EVERY occurrence, so "/blob/x/blob/y" -> "x/y" (data loss). Meant
+# str.removeprefix / str.removesuffix.
 #
-# Tier note: PEDANTIC (candidate-only). Unlike the Python CLI's default-tier
-# WL001 (src/wildlint/checkers.py), which PROVES an enclosing startswith/endswith
-# guard holds, a single ast-grep pattern cannot AND a call with its if-guard, so
-# this rule fires on any replace-to-empty call. Treat hits as candidates to review
-# against the surrounding startswith/endswith, NOT as confirmed bugs.
+# This rule is the ast-grep equivalent of the Python CLI's default-tier WL001
+# (src/wildlint/checkers.py): it matches the replace call ONLY when it is inside
+# an if-statement whose condition is a startswith/endswith call on the SAME
+# receiver ($RECV) with the SAME marker literal ($LIT). That guard proof is what
+# makes a default-tier rule safe — without it, `.replace(x, "")` fires on every
+# generic sanitization call (see 0.7.0's false-positive flood).
 #
-# ast-grep does NOT normalize Python string-literal quote style: a pattern
-# literal `""` will not match source `''` and vice versa. We therefore split
-# into two `any:` arms — one for each empty-literal quote style — so both
-# `path.replace('/blob/', '')` and `path.replace("/blob/", "")` fire.
+# Scope limit: the if-pattern matches a BARE `if RECV.startswith(LIT):` only.
+# Compound guards (`if x.startswith(m) and not skip:`) are not matched and fall
+# through to manual review — rare in practice; the canonical giturlparse shape is
+# a bare startswith.
+#
+# ast-grep mechanics: `inside` requires `stopBy: end` to descend into the if-body
+# (the default does not). Quote-style is not normalized, so the replace pattern
+# splits into two `any:` arms (single + double quote). $RECV/$LIT unify across
+# the `inside` boundary, giving the same-receiver/same-marker precision.
 id: wl001-python-replace-as-strip
 language: Python
 rule:
   any:
     - pattern: $RECV.replace($LIT, '')
     - pattern: $RECV.replace($LIT, "")
+  inside:
+    stopBy: end
+    any:
+      - pattern: 'if $RECV.startswith($LIT): $$$BODY'
+      - pattern: 'if $RECV.endswith($LIT): $$$BODY'
 message: |
-  WL001 (candidate): $RECV.replace(marker, "") removes EVERY occurrence of the
-  marker (Python str.replace is global, not first-only). If this is a prefix or
-  suffix strip, use str.removeprefix / str.removesuffix. ast-grep flags the call
-  site only — it does NOT prove a startswith/endswith guard; review before acting.
-  Origin: nephila/giturlparse #149 (fix merged in #152, cf249252).
+  WL001: $RECV.replace(marker, "") inside `if $RECV.startswith(marker):` removes
+  EVERY occurrence of the marker (Python str.replace is global), corrupting
+  values that contain it twice. Use str.removeprefix / str.removesuffix.
+  Origin: nephila/giturlparse #149 (merged #152, cf249252).
 severity: warning
 metadata:
   code: WL001
-  tier: pedantic
+  tier: default
   origin: nephila/giturlparse#149
   fix_merge: "#152 cf249252ed5"
+  guard_proven: true

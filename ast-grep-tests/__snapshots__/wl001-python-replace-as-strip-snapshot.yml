@@ -1,14 +1,16 @@
 id: wl001-python-replace-as-strip
 snapshots:
-  path.replace("/blob/", ""):
-    labels:
-    - source: path.replace("/blob/", "")
-      style: primary
-      start: 0
-      end: 26
-  path.replace('/blob/', ''):
-    labels:
+  ? |-
+    if path.startswith('/blob/'):
+        path = path.replace('/blob/', '')
+  : labels:
     - source: path.replace('/blob/', '')
       style: primary
+      start: 41
+      end: 67
+    - source: |-
+        if path.startswith('/blob/'):
+            path = path.replace('/blob/', '')
+      style: secondary
       start: 0
-      end: 26
+      end: 67
