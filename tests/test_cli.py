@@ -238,7 +238,14 @@ def test_json_output_shape(tmp_path, capsys):
     payload = json.loads(out)
     assert "findings" in payload and "errors" in payload
     assert any(f["code"] == "WL001" for f in payload["findings"])
-    assert payload["findings"][0].keys() == {"path", "line", "col", "code", "message"}
+    assert payload["findings"][0].keys() == {
+        "path",
+        "line",
+        "col",
+        "code",
+        "message",
+        "end_line",
+    }
     assert any("no such file" in e for e in payload["errors"])
 
 
@@ -249,3 +256,67 @@ def test_json_clean_is_empty(tmp_path, capsys):
     assert rc == 0
     payload = json.loads(out)
     assert payload["findings"] == [] and payload["errors"] == []
+
+
+# --------------------------------------------------------------------------- #
+# noqa on a multi-line chained call: ast.Call.lineno is the receiver's line,
+# end_lineno is the closing paren. A noqa directive on the closing-paren line
+# must suppress (previously it did not -> silent miss).
+# --------------------------------------------------------------------------- #
+def test_noqa_works_on_multiline_chained_replace(tmp_path, capsys):
+    f = tmp_path / "x.py"
+    f.write_text(
+        "def f(p):\n"
+        "    if p.startswith('/x/'):\n"
+        "        p = (p\n"
+        "             .replace('/x/', ''))  # noqa: WL001\n"
+    )
+    rc, out, _ = _run(["--select", "WL001", str(f)], capsys)
+    assert rc == 0, out  # suppressed -> exit 0
+    assert "WL001" not in out
+
+
+def test_noqa_does_not_leak_across_codes_on_multiline(tmp_path, capsys):
+    # A WL002 finding whose span crosses a WL001 noqa line must NOT be
+    # suppressed (wrong code). Pins the code-match check in the span walk.
+    f = tmp_path / "x.py"
+    f.write_text("s = (a\n     .split(' '))  # noqa: WL001\n")
+    rc, out, _ = _run(["--select", "WL002", "--pedantic", str(f)], capsys)
+    assert rc == 1, out  # WL002 NOT suppressed by the WL001 noqa
+    assert "WL002" in out
+
+
+# --------------------------------------------------------------------------- #
+# --select with a typo'd / unknown code must not silently pass.
+# --------------------------------------------------------------------------- #
+def test_unknown_select_warns_and_exits_2(tmp_path, capsys):
+    f = tmp_path / "x.py"
+    f.write_text("x = 1\n")
+    rc, out, err = _run(["--select", "WL999", str(f)], capsys)
+    assert rc == 2
+    assert "unknown --select" in err
+    assert "WL999" in err
+
+
+def test_partial_unknown_select_warns_but_runs(tmp_path, capsys):
+    f = tmp_path / "x.py"
+    f.write_text(
+        "def f(p):\n    if p.startswith('/x/'):\n        return p.replace('/x/', '')\n"
+    )
+    rc, out, err = _run(["--select", "WL001,WLXXX", str(f)], capsys)
+    assert "unknown --select" in err and "WLXXX" in err
+    assert "WL001" in out  # valid subset still ran
+    assert rc == 1
+
+
+# --------------------------------------------------------------------------- #
+# PEP-263: a non-UTF-8 file with an encoding declaration is decoded the way
+# CPython reads it (tokenize.open), not rejected as "not valid UTF-8".
+# --------------------------------------------------------------------------- #
+def test_pep263_latin1_declared_file_is_linted_not_rejected(tmp_path, capsys):
+    f = tmp_path / "x.py"
+    f.write_bytes(b"# -*- coding: latin-1 -*-\nname = 'caf\xe9'\nx = name.split(' ')\n")
+    rc, out, err = _run(["--select", "WL002", "--pedantic", str(f)], capsys)
+    assert rc == 1  # WL002 fires on the decoded .split(' ')
+    assert "WL002" in out
+    assert "not valid" not in err
