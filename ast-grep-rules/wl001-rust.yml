@@ -20,6 +20,13 @@ rule:
     any:
       - pattern: 'if $RECV.starts_with($LIT) { $$$BODY }'
       - pattern: 'if $RECV.ends_with($LIT) { $$$BODY }'
+  # Exclude else / else-if branches (Rust has no elif; `else if` nests an
+  # if_expression inside the else_clause). Those run when the guard is FALSE —
+  # the round-1 / 0.7.2 else-branch false positive. `stopBy: end` walks up to it.
+  not:
+    inside:
+      stopBy: end
+      kind: else_clause
 message: |
   WL001: $RECV.replace(marker, "") inside `if $RECV.starts_with(marker)` removes
   EVERY occurrence of the marker (Rust str::replace is global). Use

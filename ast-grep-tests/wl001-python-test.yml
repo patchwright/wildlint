@@ -1,4 +1,7 @@
 id: wl001-python-replace-as-strip
+# The else/elif cases are PERMANENT fixtures: this exact gap (replace in a branch
+# reached only when the guard is FALSE) caused shipped defects in round 1 AND in
+# 0.7.2. Do not remove them from any guard-based WL001 test.
 invalid:
   - |-
     if path.startswith('/blob/'):
@@ -9,5 +12,15 @@ valid:
   - |-
     if path.startswith('/blob/'):
         path = path.replace('/x/', '')
+  - |-
+    if path.startswith('/blob/'):
+        pass
+    else:
+        path = path.replace('/blob/', '')
+  - |-
+    if path.startswith('/blob/'):
+        pass
+    elif True:
+        path = path.replace('/blob/', '')
   - |-
     path = path.removeprefix('/blob/')

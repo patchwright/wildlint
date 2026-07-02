@@ -1,40 +1,41 @@
-# WL001 — guarded ReplaceAll-to-empty as prefix/suffix strip (Go)
+# WL001 — ReplaceAll-to-empty as a candidate strip (Go) — PEDANTIC
 # Real-bug origin (cross-language analogue): nephila/giturlparse #149 (Python),
 # cf249252. strings.ReplaceAll(s, marker, "") substitutes EVERY occurrence, so a
 # value containing the marker twice is corrupted when the intent was to drop a
 # prefix/suffix guarded by strings.HasPrefix/HasSuffix. Idiomatic fix:
 # strings.TrimPrefix / strings.TrimSuffix.
 #
-# Arm note (why only strings.ReplaceAll is matched): strings.Replace(s, marker,
-# "", n) is NOT matched because n>0 means "at most n" — n==1 is a deliberate,
-# safe single replacement (the correct prefix-strip shape) and only n<0 means
-# "all". DEEPER reason it stays dropped: ast-grep's Go grammar parses
-# `strings.Replace(...)` in a *pattern* as a type-conversion (qualified_type)
-# with ERROR nodes — it matches in statement position but NOT expression
-# position, so a parameterized arm would give *unreliable* recall, not merely
-# rare recall. An n<0 value-constraint does not fix the underlying grammar
-# fragility, so the arm stays out. (strings.Replace with n<0 is the identical but
-# rare spelling — coverage deferred until the grammar issue is resolved.)
+# Tier note: PEDANTIC (candidate-only). The other four WL001 language variants
+# ship a guard-PROVEN default-tier rule (replace inside an if guarded by
+# startsWith/HasPrefix on the same receiver+marker, with elif/else branches
+# excluded via `not: { inside: else_clause }`). Go CANNOT match that precision:
+# tree-sitter-go has no else_clause node (the else body is a bare positional
+# block, indistinguishable from the consequence by kind), so the else branch --
+# reached when the guard is FALSE -- cannot be structurally excluded, and
+# `not: { follows: else }` does not work either. Shipping an unprovable guard at
+# default tier is exactly the 0.7.2 elif/else false-positive, so Go stays
+# candidate-only: review ReplaceAll-to-empty hits against the surrounding guard.
 #
-# Guard-proven default tier: matches ReplaceAll only inside an if guarded by
-# HasPrefix/HasSuffix on the same receiver + marker. `inside` with `stopBy: end`.
+# Arm note: only strings.ReplaceAll is matched. strings.Replace(s, marker, "", n)
+# is NOT matched: n>0 means "at most n" (n==1 is a safe single replacement), and
+# ast-grep's Go grammar parses strings.Replace(...) in a pattern as a
+# type-conversion (qualified_type) with ERROR nodes -- statement-position only,
+# so the arm would give unreliable recall. (strings.Replace with n<0 is the
+# identical but rare spelling.)
 id: wl001-go-replace-as-strip
 language: Go
 rule:
   pattern: strings.ReplaceAll($RECV, $LIT, "")
-  inside:
-    stopBy: end
-    any:
-      - pattern: 'if strings.HasPrefix($RECV, $LIT) { $$$BODY }'
-      - pattern: 'if strings.HasSuffix($RECV, $LIT) { $$$BODY }'
 message: |
-  WL001: strings.ReplaceAll(x, marker, "") inside `if strings.HasPrefix(x, marker)`
-  removes EVERY occurrence of the marker. Use strings.TrimPrefix / TrimSuffix.
-  (Go analogue of giturlparse #149, cf249252.)
+  WL001 (candidate): strings.ReplaceAll(x, marker, "") removes EVERY occurrence
+  of the marker. If this is a prefix or suffix strip guarded by HasPrefix/
+  HasSuffix, use strings.TrimPrefix / TrimSuffix. ast-grep flags the call site
+  only — it does NOT prove a guard (Go's tree-sitter grammar cannot exclude else
+  branches), so review before acting. (Go analogue of giturlparse #149, cf249252.)
 severity: warning
 metadata:
   code: WL001
-  tier: default
+  tier: pedantic
   origin: nephila/giturlparse#149
   cross_language: Go
-  guard_proven: true
+  guard_proven: false   # tree-sitter-go has no else_clause node

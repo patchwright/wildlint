@@ -25,6 +25,14 @@ rule:
     any:
       - pattern: 'if ($RECV.startsWith($LIT)) $$$BODY'
       - pattern: 'if ($RECV.endsWith($LIT)) $$$BODY'
+  # Exclude else / else-if branches — those run when the guard is FALSE (the
+  # round-1 / 0.7.2 else-branch false positive). tree-sitter-javascript names
+  # the else body else_clause; `else if` nests an if_statement inside it.
+  # stopBy: end walks up to find it.
+  not:
+    inside:
+      stopBy: end
+      kind: else_clause
 message: |
   WL001: $RECV.replaceAll(marker, "") inside `if ($RECV.startsWith(marker))`
   removes EVERY occurrence of the marker (JS replaceAll is global). Use a slice:

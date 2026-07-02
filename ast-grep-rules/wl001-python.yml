@@ -31,6 +31,16 @@ rule:
     any:
       - pattern: 'if $RECV.startswith($LIT): $$$BODY'
       - pattern: 'if $RECV.endswith($LIT): $$$BODY'
+  # Exclude elif/else branches — those run when the guard is FALSE, so a replace
+  # there is NOT a guarded strip. This is the round-1 / 0.7.2 elif-else false
+  # positive; tree-sitter-python names them elif_clause / else_clause (siblings
+  # of the consequence block). `stopBy: end` walks up to find them.
+  not:
+    inside:
+      stopBy: end
+      any:
+        - kind: elif_clause
+        - kind: else_clause
 message: |
   WL001: $RECV.replace(marker, "") inside `if $RECV.startswith(marker):` removes
   EVERY occurrence of the marker (Python str.replace is global), corrupting
