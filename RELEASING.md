@@ -12,8 +12,7 @@ Two questions, kept separate:
      surface) → green checklist → publish + report.
 
 The checklist replaces "because I said so." If an item is red, it doesn't ship —
-no exceptions for vibes. (See `feedback_dont_disguise_caution_as_law`: a gate
-with substance, not caution dressed as a rule.)
+no exceptions for vibes. A gate with substance, not caution dressed as a rule.
 
 ## Readiness checklist — every release
 
@@ -24,14 +23,14 @@ with substance, not caution dressed as a rule.)
       fixed commit); recorded in the rule's docstring + README row
 - [ ] **build-honesty gate**: the checker goes RED on the real pre-fix source and
       GREEN on the fixed source — run against fetched upstream, not only a
-      synthetic repro. (`feedback_validate_problem_by_reproduction_not_reports`)
+      synthetic repro.
 - [ ] version bumped in `src/wildlint/__init__.py` **and** `pyproject.toml`
       (semver: new rule/surface = minor; internal fix = patch)
 - [ ] new public symbols exported from `src/wildlint/__init__.py` (`__all__`)
 - [ ] `python -m build` succeeds; `.venv/bin/twine check dist/*` PASSED
 - [ ] `git status` clean apart from the release diff (no stray unrelated changes)
-- [ ] **PAT valid** — `~/.config/patchwright/token` exists; **rotate if <2 weeks
-      to expiry** (created 2026-06-14, 30-day → expires ~2026-07-14)
+- [ ] **push access verified** — ensure you can push to `patchwright/wildlint`
+      (via `gh auth`, a credential helper, or a PAT stored outside the repo)
 
 ### additionally — WL static rules (lint that fires on real code)
 
@@ -54,14 +53,13 @@ with substance, not caution dressed as a rule.)
 
 ## Publish mechanics (OIDC trusted publishing — no token in the workflow)
 
-Push a tag → `.github/workflows/release.yml` builds + publishes.
+Push a tag → `.github/workflows/release.yml` builds + publishes via trusted
+publishing (no stored PyPI token).
 
 ```bash
-PWT=$(tr -d '\n' < ~/.config/patchwright/token)
 git commit -am "release: vX.Y.Z"        # or stage precisely
 git tag -a vX.Y.Z -m "vX.Y.Z — <one-line>"
-git push https://patchwright:$PWT@github.com/patchwright/wildlint main vX.Y.Z
-# token stays in a shell var only — never echo, never persist a remote
+git push origin main vX.Y.Z             # gh auth / credential helper handles auth
 ```
 
 `skip-existing: true` makes a re-tag idempotent (a version already on PyPI is a

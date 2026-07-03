@@ -633,7 +633,8 @@ NON_GENERALIZED = {
     "processes: PYTHONHASHSEED varies per worker, so set iteration order (and "
     "thus item<->weight alignment) changes run to run. The bare surface form "
     "(random.choice({1,2,3})) is rare and a narrow rule could catch it, but the "
-    "real class (set->list->positional use, e.g. the EvoEcos f982904 fix) is only "
+    "real class (set->list->positional use, e.g. list(some_set) feeding "
+    "random.choices weights) is only "
     "visible cross-process and is best caught by a reproducibility property test "
     "(run twice under differing PYTHONHASHSEED, assert identical output), not a "
     "static rule. No public gift-PR origin to verify against, so not shipped.",
