@@ -3,8 +3,8 @@
 Some bug classes resist a low-false-positive *static* rule because the defect is
 semantic, not syntactic — the same wrong behaviour is reached by different code
 each time. The recurring **rounding-rollover** bug in number / byte / SI-prefix
-humanizers is the archetype: ``boltons#403``, ``millify#13``, ``numerize#17`` and
-``si-prefix#17`` are four distinct implementations of *one* invariant break, and
+humanizers is the archetype: ``boltons#403``, ``millify#13``, ``numerize#17``,
+``si-prefix#17`` and ``humanize#329`` are five distinct implementations of *one* invariant break, and
 none of them has a stable AST signature (one is ``<=`` vs ``<``, another is a
 missing carry after rounding, another rounds an unrounded boundary value). A
 static rule that caught all four would also flag mountains of correct code.
@@ -543,6 +543,7 @@ ROLLOVER = PropertyTemplate(
         "millify#13",
         "numerize#17",
         "si-prefix#17",
+        "humanize#329",
     ),
     check=find_rollover,
     _render=_render_rollover,

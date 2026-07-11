@@ -169,7 +169,8 @@ them all also flags mountains of correct code. The archetype is the
 ([boltons#403](https://github.com/mahmoud/boltons/pull/403),
 [millify#13](https://github.com/azaitsev/millify/pull/13),
 [numerize#17](https://github.com/davidsa03/numerize/pull/17),
-[si-prefix#17](https://github.com/cfobel/si-prefix/pull/17)): four distinct
+[si-prefix#17](https://github.com/cfobel/si-prefix/pull/17),
+[humanize#329](https://github.com/python-humanize/humanize/pull/329)): five distinct
 implementations of *one* invariant break (`<=`-vs-`<`, a missing carry after
 rounding, rounding an unrounded boundary). `millify(999999)` returns `'1000k'`
 instead of `'1M'`.
@@ -223,7 +224,7 @@ wildlint --template roundtrip --func encodebytes --import-from base62 --inverse 
 
 | Code  | Catches | Distilled from |
 |-------|---------|----------------|
-| WP001 | A humanizer emits a mantissa `>= base` while a larger unit is available (`'1000k'` instead of `'1M'`) because the unit is chosen before the mantissa is rounded. | boltons#403, millify#13, numerize#17, si-prefix#17 |
+| WP001 | A humanizer emits a mantissa `>= base` while a larger unit is available (`'1000k'` instead of `'1M'`) because the unit is chosen before the mantissa is rounded. | boltons#403, millify#13, numerize#17, si-prefix#17, humanize#329 |
 | WP002 | A function accepting a temporal value unconditionally reads a datetime-only field (`.replace(second=0, microsecond=0)` or `.hour`) and crashes on a bare `datetime.date` — `datetime` is a subclass of `date`, so `isinstance(x, date)` admits dates the code can't handle. | deepdiff#602 |
 | WP003 | An encode/decode pair is not mutually inverse (`inverse(forward(x)) != x`). The archetype is a byte↔string codec that routes through an integer (`int.from_bytes`), so leading `0x00` bytes carry no weight and are silently dropped: `decodebytes(encodebytes(b"\x00\x01")) == b"\x01"`. | suminb/base62#22 |
 
