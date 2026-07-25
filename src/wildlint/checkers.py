@@ -19,7 +19,7 @@ import ast
 import tokenize
 from dataclasses import dataclass
 from io import StringIO
-from typing import Protocol
+from typing import Iterator, Protocol
 
 DEFAULT = "default"  # low false-positive; on unless deselected
 PEDANTIC = "pedantic"  # higher false-positive; opt-in via --pedantic
@@ -956,6 +956,97 @@ class JsonDumpNoDefault:
         return out
 
 
+# --------------------------------------------------------------------------- #
+# WL008 -- time.time() used for elapsed timing instead of perf_counter (PEDANTIC)
+# Origin: evoecos audit 2026-07-25 (698 time.time() vs 122 perf_counter/monotonic;
+# the elapsed-timing subset measures duration with wall-clock, which can jump on
+# NTP/DST/manual clock changes -- corrupting benchmark/timing data).
+# --------------------------------------------------------------------------- #
+class TimeTimeForElapsed:
+    """``time.time()`` measuring a duration -- use ``time.perf_counter()``.
+
+    ``time.time()`` is wall-clock and can jump backwards or forwards (NTP sync,
+    DST, manual clock changes); for elapsed-time measurement (benchmarking,
+    timeouts, profiling) ``time.perf_counter()`` is correct -- monotonic, never
+    moves backwards, highest resolution. Detects the *timer* use of a
+    ``time.time()`` call: it is an operand of a subtraction, or it is assigned to
+    a name that is subtracted later in the same function. *Timestamp* uses
+    (logging, filenames, IDs -- ``time.time()`` never subtracted) stay silent.
+    PEDANTIC: the timestamp/timer distinction is semantic; the subtract-shape gate
+    is high-precision but a timestamp that also gets diffed for logging can still
+    resemble a timer.
+    """
+
+    code = "WL008"
+    name = "time-time-for-elapsed"
+    tier = PEDANTIC
+
+    @staticmethod
+    def _is_time_time(node: ast.expr) -> bool:
+        return (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "time"
+            and node.func.attr == "time"
+        )
+
+    @staticmethod
+    def _iter_scope(scope: ast.AST) -> Iterator[ast.AST]:
+        """Yield nodes in ``scope.body`` without descending into nested scopes."""
+        stack: list[ast.AST] = list(getattr(scope, "body", []))
+        while stack:
+            n = stack.pop()
+            yield n
+            if isinstance(
+                n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+            ):
+                continue
+            stack.extend(ast.iter_child_nodes(n))
+
+    def _finding(self, path: str, node: ast.expr) -> Finding:
+        return Finding(
+            path,
+            node.lineno,
+            node.col_offset,
+            self.code,
+            "time.time() used for elapsed timing can jump (NTP/DST/clock "
+            "changes); use time.perf_counter() (monotonic) for duration "
+            "measurement",
+            end_line=node.end_lineno or node.lineno,
+        )
+
+    def _check_scope(self, scope: ast.AST, path: str, out: list[Finding]) -> None:
+        holders: dict[str, list[ast.expr]] = {}
+        for n in self._iter_scope(scope):
+            if isinstance(n, ast.Assign) and self._is_time_time(n.value):
+                for t in n.targets:
+                    if isinstance(t, ast.Name):
+                        holders.setdefault(t.id, []).append(n.value)
+        subtracted: set[str] = set()
+        for n in self._iter_scope(scope):
+            if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Sub):
+                for op in (n.left, n.right):
+                    if self._is_time_time(op):
+                        out.append(self._finding(path, op))
+                    elif isinstance(op, ast.Name) and op.id in holders:
+                        subtracted.add(op.id)
+        for name, calls in holders.items():
+            if name in subtracted:
+                for call in calls:
+                    out.append(self._finding(path, call))
+
+    def check(
+        self, tree: ast.AST, path: str, source: str | None = None
+    ) -> list[Finding]:
+        out: list[Finding] = []
+        self._check_scope(tree, path, out)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                self._check_scope(node, path, out)
+        return out
+
+
 CHECKERS: list[Checker] = [
     ReplaceToEmptyPrefix(),
     SplitSingleSpace(),
@@ -964,6 +1055,7 @@ CHECKERS: list[Checker] = [
     NotAndInOr(),
     GetOrNoneCollapse(),
     JsonDumpNoDefault(),
+    TimeTimeForElapsed(),
 ]
 
 

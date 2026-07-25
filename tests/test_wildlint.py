@@ -797,3 +797,54 @@ def test_wl007_silent_on_json_load():
         "    return json.load(f)\n"
     )
     assert "WL007" not in _codes(src, pedantic=True)
+
+
+# --------------------------------------------------------------------------- #
+# WL008 — time.time() used for elapsed timing (evoecos audit 2026-07-25)
+# --------------------------------------------------------------------------- #
+
+
+def test_wl008_fires_on_direct_subtraction():
+    src = "import time\ndef f(t0):\n    return time.time() - t0\n"
+    assert _codes(src, pedantic=True) == ["WL008"]
+
+
+def test_wl008_fires_on_start_end_subtract_variables():
+    # the common benchmarking idiom: start/end assigned, then subtracted.
+    src = (
+        "import time\n"
+        "def f():\n"
+        "    start = time.time()\n"
+        "    work()\n"
+        "    end = time.time()\n"
+        "    return end - start\n"
+    )
+    assert _codes(src, pedantic=True) == ["WL008", "WL008"]
+
+
+def test_wl008_silent_on_timestamp_use():
+    # time.time() as a wall-clock timestamp (logging), never subtracted -> correct.
+    src = (
+        "import time\n"
+        "def f(log):\n"
+        "    now = time.time()\n"
+        "    log.append({'ts': now})\n"
+    )
+    assert "WL008" not in _codes(src, pedantic=True)
+
+
+def test_wl008_silent_on_perf_counter():
+    src = (
+        "import time\n"
+        "def f():\n"
+        "    t0 = time.perf_counter()\n"
+        "    work()\n"
+        "    return time.perf_counter() - t0\n"
+    )
+    assert "WL008" not in _codes(src, pedantic=True)
+
+
+def test_wl008_silent_when_time_time_never_subtracted():
+    # time.time() in a non-subtraction expression (e.g. a filename) is a timestamp.
+    src = "import time\nf = f'result_{time.time()}.json'\n"
+    assert "WL008" not in _codes(src, pedantic=True)
