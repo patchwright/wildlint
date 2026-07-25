@@ -670,12 +670,67 @@ class NotAndInOr:
         return out
 
 
+# --------------------------------------------------------------------------- #
+# WL006 — `.get(...) or None` (falsy collapse via redundant `or None`)
+# Origin: caesar0301/treelib PR #246
+# Provenance: fix shipped in #246 (2026-07-25); bug = `node_info.get("data") or None`
+# collapsed legitimate falsy data (0/False/""/[]) to None on JSON round-trip.
+# --------------------------------------------------------------------------- #
+class GetOrNoneCollapse:
+    """``d.get(k) or None`` -- redundant and falsy-collapsing.
+
+    ``dict.get()`` already returns ``None`` for a missing key, so a trailing
+    ``or None`` is always redundant *and* collapses legitimate falsy values
+    (``0``, ``False``, ``""``, ``[]``, ``{}``) to ``None``. The author almost
+    always means plain ``d.get(k)`` (or a real default via ``d.get(k, default)``).
+    Narrow by design: fires only when a ``.get(...)`` call and a ``None``
+    constant are operands of the same ``or``. ``d.get(k) or "fallback"`` (a real
+    fallback) is intentionally not flagged.
+    """
+
+    code = "WL006"
+    name = "get-or-none-collapse"
+    tier = DEFAULT
+
+    def check(
+        self, tree: ast.AST, path: str, source: str | None = None
+    ) -> list[Finding]:
+        out: list[Finding] = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
+                continue
+            values = node.values
+            if not any(
+                isinstance(v, ast.Call)
+                and isinstance(v.func, ast.Attribute)
+                and v.func.attr == "get"
+                for v in values
+            ):
+                continue
+            if not any(isinstance(v, ast.Constant) and v.value is None for v in values):
+                continue
+            out.append(
+                Finding(
+                    path,
+                    node.lineno,
+                    node.col_offset,
+                    self.code,
+                    "d.get(k) or None collapses falsy values (0, '', [], False) "
+                    "to None; dict.get() already returns None for a missing key -- "
+                    "drop the `or None` (or use a real default)",
+                    end_line=node.end_lineno or node.lineno,
+                )
+            )
+        return out
+
+
 CHECKERS: list[Checker] = [
     ReplaceToEmptyPrefix(),
     SplitSingleSpace(),
     NegativeIndexNoGuard(),
     ArgparseDeadDest(),
     NotAndInOr(),
+    GetOrNoneCollapse(),
 ]
 
 

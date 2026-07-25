@@ -644,3 +644,46 @@ def test_wl004_silent_with_dict_access_namespace():
         "    return (args.text, list(args.__dict__))\n"
     )
     assert "WL004" not in _codes(src)
+
+
+# --------------------------------------------------------------------------- #
+# WL006 — `.get(...) or None` falsy collapse (treelib #246)
+# --------------------------------------------------------------------------- #
+
+
+def test_wl006_fires_on_get_or_none():
+    # the exact treelib #246 bug: node_info.get("data") or None
+    src = "def f(d):\n    return d.get('data') or None\n"
+    assert _codes(src) == ["WL006"]
+
+
+def test_wl006_fires_on_get_with_default_arg_or_none():
+    src = "def f(d):\n    return d.get('x', []) or None\n"
+    assert _codes(src) == ["WL006"]
+
+
+def test_wl006_fires_on_get_or_none_in_chain():
+    src = "def f(d):\n    return d.get('x') or None or 'other'\n"
+    assert _codes(src) == ["WL006"]
+
+
+def test_wl006_silent_on_get_or_real_fallback():
+    # `or "fallback"` is a legitimate fallback idiom -- NOT flagged.
+    src = "def f(d):\n    return d.get('name') or 'anonymous'\n"
+    assert "WL006" not in _codes(src)
+
+
+def test_wl006_silent_on_get_or_zero():
+    src = "def f(d):\n    return d.get('count') or 0\n"
+    assert "WL006" not in _codes(src)
+
+
+def test_wl006_silent_on_bare_get():
+    src = "def f(d):\n    return d.get('x')\n"
+    assert "WL006" not in _codes(src)
+
+
+def test_wl006_silent_on_subscript_or_none():
+    # d[k] or None is a different pattern (subscript); outside WL006's scope.
+    src = "def f(d):\n    return d['x'] or None\n"
+    assert "WL006" not in _codes(src)

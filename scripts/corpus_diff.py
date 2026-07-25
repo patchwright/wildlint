@@ -33,7 +33,7 @@ CORPUS = {
     "python-slugify==8.0.4": "slugify",
     "werkzeug==3.1.8": "werkzeug",
 }
-RULES = ["WL001", "WL002", "WL003", "WL004", "WL005"]
+RULES = ["WL001", "WL002", "WL003", "WL004", "WL005", "WL006"]
 
 
 def _run(argv: list[str], **kw) -> subprocess.CompletedProcess:
