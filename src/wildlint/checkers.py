@@ -871,6 +871,91 @@ class GetOrNoneCollapse:
         return out
 
 
+# --------------------------------------------------------------------------- #
+# WL007 — json.dump/dumps without default=/cls= in numpy-touching code (PEDANTIC)
+# Origin: evoecos audit 2026-07-25 (120 hand-rolled isinstance(np.*) json
+# handlers in src/scripts prove the class; the unguarded dumps crash at runtime
+# with TypeError on np.float64/bool_/int32). No single gift-PR origin -- this
+# is the first WL rule distilled from a codebase audit rather than the gift-PR
+# loop, so it ships PEDANTIC + unvalidated-by-corpus until a gift-PR and a
+# numpy-augmented corpus solidify any DEFAULT-worthiness.
+# --------------------------------------------------------------------------- #
+class JsonDumpNoDefault:
+    """``json.dump``/``json.dumps`` without ``default=``/``cls=`` in numpy code.
+
+    Numpy scalars (``np.float64``, ``np.bool_``, ``np.int32``) and arrays are not
+    JSON-serializable, so ``json.dump(obj, f)`` raises ``TypeError`` at runtime
+    when ``obj`` contains them. Pass ``default=`` (a fallback serializer) or
+    ``cls=`` (a custom encoder). Gated to files that import numpy: in plain
+    dict/list code the warning is almost always a false positive. High-recall /
+    low-precision by design -- an audit list of dumps to check, not a near-zero-FP
+    gate; the pinned corpus (web/template libs, no numpy) cannot exercise it, so
+    promote to DEFAULT only after measuring precision on real numpy code.
+    """
+
+    code = "WL007"
+    name = "json-dump-no-default"
+    tier = PEDANTIC
+
+    @staticmethod
+    def _numpy_imported(tree: ast.AST) -> bool:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(
+                    al.name == "numpy" or al.name.startswith("numpy.")
+                    for al in node.names
+                ):
+                    return True
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and (node.module == "numpy" or node.module.startswith("numpy."))
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _unguarded_json_method(node: ast.Call) -> str | None:
+        """Return ``"dump"``/``"dumps"`` if node is an unguarded json call, else None."""
+        func = node.func
+        if not (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "json"
+            and func.attr in ("dump", "dumps")
+        ):
+            return None
+        if any(kw.arg in ("default", "cls") for kw in node.keywords):
+            return None
+        return func.attr
+
+    def check(
+        self, tree: ast.AST, path: str, source: str | None = None
+    ) -> list[Finding]:
+        if not self._numpy_imported(tree):
+            return []
+        out: list[Finding] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            method = self._unguarded_json_method(node)
+            if method is None:
+                continue
+            out.append(
+                Finding(
+                    path,
+                    node.lineno,
+                    node.col_offset,
+                    self.code,
+                    f"json.{method}() without default=/cls= crashes on numpy "
+                    "types (np.float64/bool_/int32); add default= or cls= a "
+                    "custom encoder",
+                    end_line=node.end_lineno or node.lineno,
+                )
+            )
+        return out
+
+
 CHECKERS: list[Checker] = [
     ReplaceToEmptyPrefix(),
     SplitSingleSpace(),
@@ -878,6 +963,7 @@ CHECKERS: list[Checker] = [
     ArgparseDeadDest(),
     NotAndInOr(),
     GetOrNoneCollapse(),
+    JsonDumpNoDefault(),
 ]
 
 

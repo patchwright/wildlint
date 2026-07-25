@@ -736,3 +736,64 @@ def test_wl006_silent_on_subscript_or_none():
     # d[k] or None is a different pattern (subscript); outside WL006's scope.
     src = "def f(d):\n    return d['x'] or None\n"
     assert "WL006" not in _codes(src)
+
+
+# --------------------------------------------------------------------------- #
+# WL007 — json.dump/dumps without default= in numpy code (evoecos audit 2026-07-25)
+# --------------------------------------------------------------------------- #
+
+
+def test_wl007_fires_on_json_dump_no_default_in_numpy_file():
+    src = (
+        "import json\n"
+        "import numpy as np\n"
+        "def save(obj, f):\n"
+        "    json.dump(obj, f)\n"
+    )
+    assert _codes(src, pedantic=True) == ["WL007"]
+
+
+def test_wl007_fires_on_json_dumps_no_default():
+    src = (
+        "import json\n"
+        "import numpy as np\n"
+        "def ser(obj):\n"
+        "    return json.dumps(obj)\n"
+    )
+    assert _codes(src, pedantic=True) == ["WL007"]
+
+
+def test_wl007_silent_with_default_kwarg():
+    src = (
+        "import json\n"
+        "import numpy as np\n"
+        "def save(obj, f):\n"
+        "    json.dump(obj, f, default=str)\n"
+    )
+    assert "WL007" not in _codes(src, pedantic=True)
+
+
+def test_wl007_silent_with_cls_kwarg():
+    src = (
+        "import json\n"
+        "import numpy as np\n"
+        "def save(obj, f):\n"
+        "    json.dump(obj, f, cls=NumpyEncoder)\n"
+    )
+    assert "WL007" not in _codes(src, pedantic=True)
+
+
+def test_wl007_silent_without_numpy_import():
+    # no numpy -> the numpy-TypeError crash risk is absent; gate suppresses.
+    src = "import json\n" "def save(obj, f):\n" "    json.dump(obj, f)\n"
+    assert "WL007" not in _codes(src, pedantic=True)
+
+
+def test_wl007_silent_on_json_load():
+    src = (
+        "import json\n"
+        "import numpy as np\n"
+        "def load(f):\n"
+        "    return json.load(f)\n"
+    )
+    assert "WL007" not in _codes(src, pedantic=True)
