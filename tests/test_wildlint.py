@@ -146,6 +146,55 @@ def test_wl003_fires_on_deeper_index_when_pedantic():
     assert _codes("x = s[-3]\n", pedantic=True) == ["WL003"]
 
 
+# Guard-awareness (0.8.4): a literal len(x) guard in scope suppresses the finding.
+
+
+def test_wl003_silent_inside_if_len_guard():
+    src = "def f(q):\n    if len(q) >= 2:\n        return q[-2]\n"
+    assert "WL003" not in _codes(src, pedantic=True)
+
+
+def test_wl003_silent_inside_while_len_guard_and_chain():
+    # convex-hull idiom: while len(h) >= 2 and cross(h[-2], ...): ...
+    src = "def f(h):\n    while len(h) >= 2 and cross(h[-2], h[-1]):\n        h.pop()\n"
+    assert "WL003" not in _codes(src, pedantic=True)
+
+
+def test_wl003_silent_with_or_short_circuit_guard():
+    # `len(q) < 2 or q[-2]`: RHS only evaluated when len >= 2.
+    src = "def f(q):\n    return len(q) < 2 or q[-2]\n"
+    assert "WL003" not in _codes(src, pedantic=True)
+
+
+def test_wl003_silent_with_gt_off_by_one_guard():
+    # len(q) > 1 implies len(q) >= 2.
+    src = "def f(q):\n    if len(q) > 1:\n        return q[-2]\n"
+    assert "WL003" not in _codes(src, pedantic=True)
+
+
+def test_wl003_silent_in_else_of_short_test():
+    # else runs when not(len(q) < 2), i.e. len(q) >= 2.
+    src = "def f(q):\n    if len(q) < 2:\n        return None\n    else:\n        return q[-2]\n"
+    assert "WL003" not in _codes(src, pedantic=True)
+
+
+def test_wl003_fires_when_guard_threshold_too_low():
+    # len(q) >= 1 does NOT ensure len(q) >= 2.
+    src = "def f(q):\n    if len(q) >= 1:\n        return q[-2]\n"
+    assert _codes(src, pedantic=True) == ["WL003"]
+
+
+def test_wl003_fires_when_guard_is_other_receiver():
+    src = "def f(q, other):\n    if len(other) >= 2:\n        return q[-2]\n"
+    assert _codes(src, pedantic=True) == ["WL003"]
+
+
+def test_wl003_fires_with_or_non_guarding_prefix():
+    # `len(q) >= 2 or q[-2]`: or evaluates q[-2] only when len < 2 -- the unsafe case.
+    src = "def f(q):\n    return len(q) >= 2 or q[-2]\n"
+    assert _codes(src, pedantic=True) == ["WL003"]
+
+
 # --------------------------------------------------------------------------- #
 # WL004 — argparse option defined but never wired (slugify #180)
 # --------------------------------------------------------------------------- #

@@ -356,49 +356,196 @@ class SplitSingleSpace:
 
 
 # --------------------------------------------------------------------------- #
+# Length-guard analysis -- shared by WL003. Answers: does a condition held TRUE
+# (or held FALSE) imply ``len(target) >= n``? Only literal ``len(<target>)`` vs
+# an integer constant is recognized; variable bounds, aliased receivers and
+# preceding early-return guards are intentionally NOT seen (conservative -- a
+# missed guard leaves a false positive, never a missed bug).
+_LEN_GUARD_MIRROR = {
+    ast.Gt: ast.Lt,
+    ast.GtE: ast.LtE,
+    ast.Lt: ast.Gt,
+    ast.LtE: ast.GtE,
+    ast.Eq: ast.Eq,
+    ast.NotEq: ast.NotEq,
+}
+
+
+def _int_const(node: ast.expr) -> int | None:
+    if (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, int)
+        and not isinstance(node.value, bool)
+    ):
+        return node.value
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and isinstance(node.operand.value, int)
+        and not isinstance(node.operand.value, bool)
+    ):
+        return -node.operand.value
+    return None
+
+
+def _is_len_of(node: ast.expr, target: str) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "len"
+        and len(node.args) == 1
+        and not node.keywords
+        and ast.unparse(node.args[0]) == target
+    )
+
+
+def _len_cmp(node: ast.expr, target: str) -> tuple[type, int] | None:
+    """``len(target) OP int`` or ``int OP len(target)`` -> (op class on len, int)."""
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or len(node.comparators) != 1
+    ):
+        return None
+    left, op, right = node.left, node.ops[0], node.comparators[0]
+    if _is_len_of(left, target):
+        c = _int_const(right)
+        return (type(op), c) if c is not None else None
+    if _is_len_of(right, target):
+        c = _int_const(left)
+        return (_LEN_GUARD_MIRROR[type(op)], c) if c is not None else None
+    return None
+
+
+def _ensures_len_ge(node: ast.expr, target: str, n: int) -> bool:
+    """Does ``node`` held TRUE imply ``len(target) >= n``?"""
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And):
+        return any(_ensures_len_ge(v, target, n) for v in node.values)
+    lc = _len_cmp(node, target)
+    if lc is None:
+        return False
+    op_type, c = lc
+    if op_type is ast.GtE:  # len >= c
+        return c >= n
+    if op_type is ast.Gt:  # len > c -> len >= c + 1
+        return c + 1 >= n
+    if op_type is ast.Eq:  # len == c -> len >= c
+        return c >= n
+    return False  # Lt / LtE / NotEq held true -> upper bound, no guarantee
+
+
+def _negation_ensures_len_ge(node: ast.expr, target: str, n: int) -> bool:
+    """Does ``node`` held FALSE imply ``len(target) >= n``?"""
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+        return any(_negation_ensures_len_ge(v, target, n) for v in node.values)
+    lc = _len_cmp(node, target)
+    if lc is None:
+        return False
+    op_type, c = lc
+    if op_type is ast.Lt:  # len < c  held false -> len >= c
+        return c >= n
+    if op_type is ast.LtE:  # len <= c held false -> len >= c + 1
+        return c + 1 >= n
+    return False  # Gt / GtE / Eq held false -> no lower bound
+
+
 # WL003 — deep negative index without a length guard  (PEDANTIC)
 # Origin: savoirfairelinux/num2words PR #661
 # Provenance: PR #661 open; bug on master (07814cb11415) = ordinal [-2] IndexError.
+# Guard-awareness added 0.8.4 (caesar0301/treelib#246 follow-up): suppress when a
+# ``len(x)`` guard is provably in scope, cutting the ~95% false-positive rate the
+# rule had on array-heavy scientific code (treelib/evoecos audit 2026-07-25).
 # --------------------------------------------------------------------------- #
 class NegativeIndexNoGuard:
-    """``x[-k]`` with ``k >= 2`` — IndexError if the sequence is shorter than k.
+    """``x[-k]`` (k >= 2) — IndexError if the sequence is shorter than k.
 
     The num2words bug indexed ``number_str[-2]`` unconditionally; ``"0"`` has
-    length 1 and crashed. Pedantic because ``x[-2]`` is frequently safe (the
-    length is known from context the checker cannot see), so this is opt-in.
+    length 1 and crashed. Pedantic because ``x[-2]`` is frequently safe by
+    context the checker cannot fully see (``np.sort`` output known to have >= 2
+    elements, etc.). Guard-aware: a finding is suppressed when a literal
+    ``len(x)`` guard is in scope at the index site -- an enclosing ``if``/``while``
+    whose test ensures ``len(x) >= k`` (or whose ``else`` runs under that
+    guarantee), or a short-circuit ``and``/``or`` chain that establishes it
+    before the index is evaluated. Conservative by design: variable bounds,
+    aliased receivers and earlier early-return guards are not recognized, so a
+    miss leaves a false positive rather than a suppressed real bug.
     """
 
     code = "WL003"
     name = "negative-index-no-guard"
     tier = PEDANTIC
 
+    @staticmethod
+    def _neg_index(node: ast.Subscript) -> int | None:
+        idx = node.slice
+        if (
+            isinstance(idx, ast.UnaryOp)
+            and isinstance(idx.op, ast.USub)
+            and isinstance(idx.operand, ast.Constant)
+            and isinstance(idx.operand.value, int)
+            and idx.operand.value >= 2
+        ):
+            return idx.operand.value
+        return None
+
+    @staticmethod
+    def _guarded(
+        node: ast.Subscript, target: str, n: int, parent: dict[ast.AST, ast.AST]
+    ) -> bool:
+        cur: ast.AST = node
+        while cur in parent:
+            par = parent[cur]
+            if isinstance(par, (ast.If, ast.While)):
+                if cur in par.body and _ensures_len_ge(par.test, target, n):
+                    return True
+                if (
+                    isinstance(par, ast.If)
+                    and cur in par.orelse
+                    and _negation_ensures_len_ge(par.test, target, n)
+                ):
+                    return True
+            elif isinstance(par, ast.BoolOp) and cur in par.values:
+                prefix = par.values[: par.values.index(cur)]
+                if isinstance(par.op, ast.And) and any(
+                    _ensures_len_ge(v, target, n) for v in prefix
+                ):
+                    return True
+                if isinstance(par.op, ast.Or) and any(
+                    _negation_ensures_len_ge(v, target, n) for v in prefix
+                ):
+                    return True
+            cur = par
+        return False
+
     def check(
         self, tree: ast.AST, path: str, source: str | None = None
     ) -> list[Finding]:
         out: list[Finding] = []
+        parent: dict[ast.AST, ast.AST] = {}
+        for par in ast.walk(tree):
+            for child in ast.iter_child_nodes(par):
+                parent[child] = par
         for node in ast.walk(tree):
             if not isinstance(node, ast.Subscript):
                 continue
-            idx = node.slice
-            if (
-                isinstance(idx, ast.UnaryOp)
-                and isinstance(idx.op, ast.USub)
-                and isinstance(idx.operand, ast.Constant)
-                and isinstance(idx.operand.value, int)
-                and idx.operand.value >= 2
-            ):
-                target = ast.unparse(node.value)
-                out.append(
-                    Finding(
-                        path,
-                        node.lineno,
-                        node.col_offset,
-                        self.code,
-                        f"{target}[-{idx.operand.value}] raises IndexError if "
-                        f"len({target}) < {idx.operand.value}; add a length guard",
-                        end_line=node.end_lineno or node.lineno,
-                    )
+            n = self._neg_index(node)
+            if n is None:
+                continue
+            target = ast.unparse(node.value)
+            if self._guarded(node, target, n, parent):
+                continue
+            out.append(
+                Finding(
+                    path,
+                    node.lineno,
+                    node.col_offset,
+                    self.code,
+                    f"{target}[-{n}] raises IndexError if len({target}) < {n}; "
+                    "add a length guard",
+                    end_line=node.end_lineno or node.lineno,
                 )
+            )
         return out
 
 
