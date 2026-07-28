@@ -3,6 +3,8 @@
 [![CI](https://github.com/patchwright/wildlint/actions/workflows/ci.yml/badge.svg)](https://github.com/patchwright/wildlint/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/wildlint.svg)](https://pypi.org/project/wildlint/)
 
+![wildlint catching a WL001 finding](docs/demo.gif)
+
 Static checks for bug classes off-the-shelf linters (ruff/flake8/pylint) don't
 cover — the kind that look like ordinary, working code.
 
