@@ -3,6 +3,10 @@
 Entries below start at v0.8.3, where this file was introduced. For v0.1.0–v0.8.2,
 see the [GitHub releases](https://github.com/patchwright/wildlint/releases) and `git tag -l`.
 
+## v0.8.8 (2026-08-05)
+- CI fix-up for v0.8.7: `ruff format` and `mypy` were red on the WL006 fix's
+  new code (type-narrowing + formatting only, no behavior change)
+
 ## v0.8.7 (2026-08-05)
 - WL006: fix false positives on dict subclasses whose `.get()` does not
   default to `None` (e.g. `http.cookies.Morsel`, which returns `''` for an

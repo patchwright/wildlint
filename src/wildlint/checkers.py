@@ -888,28 +888,28 @@ class GetOrNoneCollapse:
             name = receiver.id
             if name == "self":
                 cls = _enclosing(receiver, (ast.ClassDef,))
-                if cls is None:
+                if not isinstance(cls, ast.ClassDef):
                     return False
                 return any(
                     _wl006_dotted_name(base) in _WL006_NON_NONE_DEFAULT_TYPES
                     for base in cls.bases
                 )
             func = _enclosing(receiver, (ast.FunctionDef, ast.AsyncFunctionDef))
-            if func is None:
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 return False
-            all_args = (
-                func.args.posonlyargs + func.args.args + func.args.kwonlyargs
-            )
+            all_args = func.args.posonlyargs + func.args.args + func.args.kwonlyargs
             for arg in all_args:
                 if arg.arg == name and arg.annotation is not None:
-                    if _wl006_dotted_name(arg.annotation) in _WL006_NON_NONE_DEFAULT_TYPES:
+                    if (
+                        _wl006_dotted_name(arg.annotation)
+                        in _WL006_NON_NONE_DEFAULT_TYPES
+                    ):
                         return True
             for stmt in ast.walk(func):
                 if (
                     isinstance(stmt, ast.Assign)
                     and any(
-                        isinstance(t, ast.Name) and t.id == name
-                        for t in stmt.targets
+                        isinstance(t, ast.Name) and t.id == name for t in stmt.targets
                     )
                     and isinstance(stmt.value, ast.Call)
                     and _wl006_dotted_name(stmt.value.func)
@@ -936,6 +936,9 @@ class GetOrNoneCollapse:
                 continue
             if not any(isinstance(v, ast.Constant) and v.value is None for v in values):
                 continue
+            assert isinstance(
+                get_call.func, ast.Attribute
+            )  # narrowed by the `next(...)` filter above
             receiver = get_call.func.value
             if _receiver_is_known_nonnone_default(receiver):
                 continue

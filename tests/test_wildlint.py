@@ -758,11 +758,7 @@ def test_wl006_silent_on_morsel_dotted_annotation():
 
 
 def test_wl006_silent_on_morsel_local_construction():
-    src = (
-        "def f():\n"
-        "    m = Morsel()\n"
-        "    return m.get('domain') or None\n"
-    )
+    src = "def f():\n" "    m = Morsel()\n" "    return m.get('domain') or None\n"
     assert "WL006" not in _codes(src)
 
 
