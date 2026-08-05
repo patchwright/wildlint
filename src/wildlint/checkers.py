@@ -822,7 +822,27 @@ class NotAndInOr:
 # Origin: caesar0301/treelib PR #246
 # Provenance: fix shipped in #246 (2026-07-25); bug = `node_info.get("data") or None`
 # collapsed legitimate falsy data (0/False/""/[]) to None on JSON round-trip.
+# FP fix (2026-08-05): dj-bolt/django-bolt surfaced 3 false positives -- `.get()`
+# on `http.cookies.Morsel` (and other dict subclasses that pre-populate keys
+# with a non-None default, e.g. `''` for an unset Morsel attribute) is doing
+# real normalization, not a redundant collapse. `_receiver_is_known_nonnone_default`
+# skips receivers provably typed/constructed as one of those subclasses.
 # --------------------------------------------------------------------------- #
+# dict subclasses whose `.get()` does NOT return None for an absent/unset key
+# (verified: http.cookies.Morsel returns '' for every unset attribute). Extend
+# as further false-positive classes are confirmed against real code.
+_WL006_NON_NONE_DEFAULT_TYPES = frozenset({"Morsel", "BaseCookie", "SimpleCookie"})
+
+
+def _wl006_dotted_name(node: ast.expr) -> str | None:
+    """Last-segment name of a Name/Attribute node, e.g. 'Morsel' for `cookies.Morsel`."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
 class GetOrNoneCollapse:
     """``d.get(k) or None`` -- redundant and falsy-collapsing.
 
@@ -833,6 +853,11 @@ class GetOrNoneCollapse:
     Narrow by design: fires only when a ``.get(...)`` call and a ``None``
     constant are operands of the same ``or``. ``d.get(k) or "fallback"`` (a real
     fallback) is intentionally not flagged.
+
+    Excludes receivers provably typed or constructed as a known dict subclass
+    whose ``.get()`` does not default to ``None`` (e.g. ``http.cookies.Morsel``,
+    which returns ``''`` for an unset attribute -- there the `or None` is real
+    normalization, not a collapse bug).
     """
 
     code = "WL006"
@@ -843,18 +868,76 @@ class GetOrNoneCollapse:
         self, tree: ast.AST, path: str, source: str | None = None
     ) -> list[Finding]:
         out: list[Finding] = []
+
+        parents: dict[ast.AST, ast.AST] = {}
+        for parent in ast.walk(tree):
+            for child in ast.iter_child_nodes(parent):
+                parents[child] = parent
+
+        def _enclosing(node: ast.AST, types: tuple[type, ...]) -> ast.AST | None:
+            cur = parents.get(node)
+            while cur is not None:
+                if isinstance(cur, types):
+                    return cur
+                cur = parents.get(cur)
+            return None
+
+        def _receiver_is_known_nonnone_default(receiver: ast.expr) -> bool:
+            if not isinstance(receiver, ast.Name):
+                return False
+            name = receiver.id
+            if name == "self":
+                cls = _enclosing(receiver, (ast.ClassDef,))
+                if cls is None:
+                    return False
+                return any(
+                    _wl006_dotted_name(base) in _WL006_NON_NONE_DEFAULT_TYPES
+                    for base in cls.bases
+                )
+            func = _enclosing(receiver, (ast.FunctionDef, ast.AsyncFunctionDef))
+            if func is None:
+                return False
+            all_args = (
+                func.args.posonlyargs + func.args.args + func.args.kwonlyargs
+            )
+            for arg in all_args:
+                if arg.arg == name and arg.annotation is not None:
+                    if _wl006_dotted_name(arg.annotation) in _WL006_NON_NONE_DEFAULT_TYPES:
+                        return True
+            for stmt in ast.walk(func):
+                if (
+                    isinstance(stmt, ast.Assign)
+                    and any(
+                        isinstance(t, ast.Name) and t.id == name
+                        for t in stmt.targets
+                    )
+                    and isinstance(stmt.value, ast.Call)
+                    and _wl006_dotted_name(stmt.value.func)
+                    in _WL006_NON_NONE_DEFAULT_TYPES
+                ):
+                    return True
+            return False
+
         for node in ast.walk(tree):
             if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
                 continue
             values = node.values
-            if not any(
-                isinstance(v, ast.Call)
-                and isinstance(v.func, ast.Attribute)
-                and v.func.attr == "get"
-                for v in values
-            ):
+            get_call = next(
+                (
+                    v
+                    for v in values
+                    if isinstance(v, ast.Call)
+                    and isinstance(v.func, ast.Attribute)
+                    and v.func.attr == "get"
+                ),
+                None,
+            )
+            if get_call is None:
                 continue
             if not any(isinstance(v, ast.Constant) and v.value is None for v in values):
+                continue
+            receiver = get_call.func.value
+            if _receiver_is_known_nonnone_default(receiver):
                 continue
             out.append(
                 Finding(

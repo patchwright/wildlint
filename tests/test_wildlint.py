@@ -738,6 +738,50 @@ def test_wl006_silent_on_subscript_or_none():
     assert "WL006" not in _codes(src)
 
 
+# WL006 false-positive fix (dj-bolt/django-bolt, 2026-08-05): dict subclasses
+# whose `.get()` does not default to None (e.g. http.cookies.Morsel returns ''
+# for an unset attribute) must not be flagged -- the `or None` there is real
+# normalization, not a redundant collapse.
+
+
+def test_wl006_silent_on_morsel_annotated_param():
+    src = "def f(morsel: Morsel):\n    return morsel.get('domain') or None\n"
+    assert "WL006" not in _codes(src)
+
+
+def test_wl006_silent_on_morsel_dotted_annotation():
+    src = (
+        "def f(morsel: http.cookies.Morsel):\n"
+        "    return morsel.get('domain') or None\n"
+    )
+    assert "WL006" not in _codes(src)
+
+
+def test_wl006_silent_on_morsel_local_construction():
+    src = (
+        "def f():\n"
+        "    m = Morsel()\n"
+        "    return m.get('domain') or None\n"
+    )
+    assert "WL006" not in _codes(src)
+
+
+def test_wl006_silent_on_self_morsel_subclass():
+    src = (
+        "class MyMorsel(Morsel):\n"
+        "    def domain(self):\n"
+        "        return self.get('domain') or None\n"
+    )
+    assert "WL006" not in _codes(src)
+
+
+def test_wl006_still_fires_on_plain_dict_param():
+    # a same-named `d` unrelated to Morsel must still fire -- the exclusion is
+    # receiver-type-specific, not name-based.
+    src = "def f(d: dict):\n    return d.get('data') or None\n"
+    assert _codes(src) == ["WL006"]
+
+
 # --------------------------------------------------------------------------- #
 # WL007 — json.dump/dumps without default= in numpy code (evoecos audit 2026-07-25)
 # --------------------------------------------------------------------------- #
